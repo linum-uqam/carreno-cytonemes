@@ -4,3 +4,5 @@ scikit-learn
 scipy
 imageio
 gdown
+patool
+pyunpack
