@@ -1,14 +1,43 @@
 import numpy as np
 
 
+def normalize(x, minv=0, maxv=1):
+    """
+    Normalize array between given range
+    Parameters
+    ----------
+    x : list, ndarray
+        array to normalize
+    minv : float
+        min value
+    maxv : float
+        max value
+    Returns
+    -------
+    y : ndarray
+        normalized x
+    """
+    y = np.array(x)
+    y = y + (0 - y.min())
+    y = y / y.max()
+    return y * (maxv - minv) + minv
+
+
 def point_distance(coord1, coord2=None, dist=None):
-    """Distance between 2 points
+    """
     Get the Euclidean distance between 2 points
-    
-    :param coord1: coordonate of first point  (list)
-    :param coord2: coordonate of second point, default is the absolute 0 coord (list)
-    :param dist:   length between each pixel, default is 1 for each axes (list)
-    :return:       distance between coord1 and coord2 
+    Parameters
+    ----------
+    coord1 : list
+        coordonate of first point
+    coord2 : list
+        coordonate of second point, default is the absolute 0 coord
+    dist : list
+        length between each pixel, default is 1 for each axes
+    Returns
+    -------
+    __ : float
+        distance between coord1 and coord2 
     """
     diff = np.array(coord1) - np.array(coord2)
     
@@ -19,7 +48,8 @@ def point_distance(coord1, coord2=None, dist=None):
     
 
 def path_length(coordinates, distances=[1, 1, 1]):
-    """Get length of a list of coordinates
+    """
+    Get length of a list of coordinates
     Parameters
     ----------
     coordinates : list
