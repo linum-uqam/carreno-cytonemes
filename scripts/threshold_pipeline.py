@@ -1,14 +1,16 @@
 import tifffile as tif
 from skimage.morphology import binary_opening
 import csv
+import numpy as np
 from carreno.segment.threshold import primary_object
-from carreno.utils.morphology import separate_blob
-from carreno.cytoneme.path import cyto_paths, clean_cyto_paths
+from carreno.cytoneme.path import skeletonized_cell_paths, clean_cyto_paths
+from carreno.utils.morphology import separate_blob, create_sphere
+from carreno.utils.util import euclidean_dist
 
-filename = ...  # path to a tif volume with cell(s)
+filename = "data/dataset/input/0.tif"  # path to a tif volume with cell(s)
 distances = [1, 1, 1]  # axis distances in order
 denoise = None  # denoise volume ("bm", "nlm", None)
-psf = None  # another denoising option for applying richardson lucy filter
+psf = "data/psf/Averaged PSF.tif"  # another denoising option for applying richardson lucy filter
 sharpen = True  # sharpens volume before segmentation with maximum gaussian 2e derivative
 
 
@@ -59,7 +61,7 @@ def cells_info_csv(filename, cells_info, distances):
                     
                     # update path length
                     if j + 1 < n:
-                        length += utils.point_distance(cells_info[cell_id]['path'][i][j],
+                        length += euclidean_dist(cells_info[cell_id]['path'][i][j],
                                                        cells_info[cell_id]['path'][i][j+1],
                                                        distances)
     
@@ -72,17 +74,19 @@ def main():
     cells_info = []
     
     # get cell(s) mask
-    volume = tif.imread(filename)
-    cell_m = primary_oject(volume, denoise=denoise, psf=psf, sharpen=sharpen)
+    cell_m = primary_object(tif.imread(filename),
+                            denoise=denoise,
+                            psf=tif.imread(psf),
+                            sharpen=sharpen)
     
     # get cell(s) body mask
-    sphere = utils.create_sphere(2, distances)
-    body_m = binary_opening(cell_m, structure=sphere)
+    sphere = create_sphere(2, distances)
+    body_m = binary_opening(cell_m, selem=sphere)
     
     # separate cells and get cells bodies
     bodies, cells = separate_blob(body_m,
-                                cell_m,
-                                distances=distances)
+                                  cell_m,
+                                  distances=distances)
     
     for i in range(len(cells)):
         # body metrics
@@ -105,9 +109,6 @@ def main():
     
     filename_csv = filename.rsplit( ".", 1 )[0] + '.csv'
     cells_info_csv(filename_csv, cells_info, distances)
-    
-    for i in cells_info:
-        print(i)
 
 
 if __name__ == "__main__":

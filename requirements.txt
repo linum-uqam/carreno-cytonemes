@@ -6,3 +6,4 @@ gdown
 patool
 pyunpack
 scikit-learn
+bm3d

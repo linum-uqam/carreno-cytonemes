@@ -1,5 +1,9 @@
 import numpy as np
 from scipy import ndimage as nd
+from carreno.utils.util import euclidean_dist
+from skimage.measure import regionprops
+from skimage.feature import peak_local_max
+from skimage.segmentation import watershed
 
 def getNeighbors(index, data, structure=None):
     """Get neighbors around the index in data
@@ -80,30 +84,6 @@ def getNeighbors3D(index, x):
     return neighbors + np.array(index)
 
 
-def position_inside(position, volume):
-    """Check if position is inside object in volume
-    Parameters
-    ----------
-    volume : ndarray
-        binary 3d volume
-    position : list
-        position to validate inside the volume
-    Returns
-    -------
-    __ : bool
-        if valid or not
-    """
-    pos = np.round(np.array(position)).astype(int)
-    maximum = np.array(volume.shape)
-    
-    # out of bound?
-    if (pos < np.array([0,0,0])).any() or (pos >= maximum).any():
-        return False
-    
-    # inside volume object?
-    return volume[pos[0], pos[1], pos[2]] == True
-
-
 def separate_blob(body_mask, cell_mask=None, min_dist=2, distances=[1, 1, 1]):
     """Attempt at Separating blobs using foreground pixels distance from background pixels.
     Parameters
@@ -128,9 +108,9 @@ def separate_blob(body_mask, cell_mask=None, min_dist=2, distances=[1, 1, 1]):
     
     # find 1 local max per cell
     distance = nd.distance_transform_edt(body_mask)
-    tmp_coords = feature.peak_local_max(distance,
-                                        footprint=np.ones((52, 40, 40)),
-                                        labels=body_mask)
+    tmp_coords = peak_local_max(distance,
+                                footprint=np.ones((52, 40, 40)),
+                                labels=body_mask)
     
     # min_distance doesn't work with peak_local_max when using footprint
     # here's my version
@@ -143,7 +123,7 @@ def separate_blob(body_mask, cell_mask=None, min_dist=2, distances=[1, 1, 1]):
     while i < len(tmp_coords):
         far_enough = True
         for co in coords:
-            dist = utils.point_distance(co, tmp_coords[i], distances)
+            dist = euclidean_dist(co, tmp_coords[i], distances)
 
             if dist < min_dist:
                 far_enough = False
@@ -160,8 +140,8 @@ def separate_blob(body_mask, cell_mask=None, min_dist=2, distances=[1, 1, 1]):
     local_max = np.zeros(distance.shape, dtype=bool)
     local_max[tuple(coords.T)] = True
     markers = nd.label(local_max)[0]
-    cell_labels = segmentation.watershed(-distance, markers, mask=cell_mask)
-    regions = measure.regionprops(cell_labels)
+    cell_labels = watershed(-distance, markers, mask=cell_mask)
+    regions = regionprops(cell_labels)
 
     # restore cells with cytonemes
     cell_labels_list = []
@@ -175,3 +155,27 @@ def separate_blob(body_mask, cell_mask=None, min_dist=2, distances=[1, 1, 1]):
         body_labels_list.append(np.logical_and(cell, body_mask))
 
     return cell_labels_list, body_labels_list
+
+
+def create_sphere(radius, distances=[1, 1, 1]):
+    """Create a ndarray containing a sphere
+    Parameters
+    ----------
+    radius : float
+        Sphere radius (influence volume size)
+    distances : [float]
+        Distance between instances on each axis
+    """
+    size = np.array([(radius / distances[0]) * 2 + 1,
+                     (radius / distances[1]) * 2 + 1,
+                     (radius / distances[2]) * 2 + 1]).round().astype(int)
+    center = [int(size[0] // 2), int(size[1] // 2), int(size[2] // 2)]
+    sphere = np.ones(size)
+    
+    for z in range(size[0]):
+        for y in range(size[1]):
+            for x in range(size[2]):
+                if euclidean_dist(center, [z, y, x], distances) > radius:
+                    sphere[z, y, x] = 0
+    
+    return sphere

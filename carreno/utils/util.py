@@ -22,7 +22,7 @@ def normalize(x, minv=0, maxv=1):
     return y * (maxv - minv) + minv
 
 
-def point_distance(coord1, coord2=None, dist=None):
+def euclidean_dist(coord1, coord2=0, dist=None):
     """Get the Euclidean distance between 2 points
     Parameters
     ----------
@@ -37,30 +37,30 @@ def point_distance(coord1, coord2=None, dist=None):
     __ : float
         distance between coord1 and coord2 
     """
-    diff = np.array(coord1) - np.array(coord2)
+    diff = np.array(coord1) - coord2
     
     if dist is not None:
-        diff = diff * np.array(dist)
+        diff = diff * dist
     
     return (diff ** 2).sum() ** 0.5
     
 
-def path_length(coordinates, distances=[1, 1, 1]):
-    """Get length of a list of coordinates
-    Parameters
-    ----------
-    coordinates : list
-        list of coordinates forming a path
-    distances : list or ndarray
-        axis distances in order
-    Returns
-    -------
-    length : float
-        length of path
+def unstack(a, axis=0):
     """
-    length = 0
-        
-    for j in range(1, len(path)):
-        length += utils.point_distance(path[j-1], path[j], distances)
+    Unstack ndarray. The Opposite of numpy.stack()
+
+    :param a: array like ndarray
+    :param axis: axis to unstack
+    :return: unstacked array
+    """
+    return [np.squeeze(e, axis) for e in np.split(a, a.shape[axis], axis = axis)]
     
-    return length
+
+def coord2np(coord):
+    """coordinate to numpy index
+    [z, y, x] -> [[z], [y], [x]]
+    
+    :param coord: coordinate (list)
+    :return:      numpy index (list)
+    """
+    return tuple([[i] for i in coord])
