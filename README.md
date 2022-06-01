@@ -9,5 +9,17 @@ The library and scripts can be installed locally by using:
 pip install -e .
 ```
 
-# Project structure
+## Dependencies
+With `pip` :
+```
+pip install -i requirements.txt
+```
+
+With `anaconda` :
+```
+conda env create --file environment.yml
+conda activate carreno-cyto
+```
+
+## Project structure
 Will try to respect [SCILPY](https://github.com/scilus/scilpy "SCILPY GitHub") project structure as much as possible.

@@ -1,0 +1,7 @@
+name: carreno-cyto
+dependencies:
+  - python>=3
+  - anaconda
+  - pip
+  - pip:
+    - -r requirements.txt

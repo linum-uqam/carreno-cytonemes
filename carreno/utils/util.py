@@ -2,8 +2,7 @@ import numpy as np
 
 
 def normalize(x, minv=0, maxv=1):
-    """
-    Normalize array between given range
+    """Normalize array between given range
     Parameters
     ----------
     x : list, ndarray
@@ -24,8 +23,7 @@ def normalize(x, minv=0, maxv=1):
 
 
 def point_distance(coord1, coord2=None, dist=None):
-    """
-    Get the Euclidean distance between 2 points
+    """Get the Euclidean distance between 2 points
     Parameters
     ----------
     coord1 : list
@@ -48,8 +46,7 @@ def point_distance(coord1, coord2=None, dist=None):
     
 
 def path_length(coordinates, distances=[1, 1, 1]):
-    """
-    Get length of a list of coordinates
+    """Get length of a list of coordinates
     Parameters
     ----------
     coordinates : list
