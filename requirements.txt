@@ -8,3 +8,4 @@ pyunpack
 scikit-image
 scikit-learn
 bm3d
+matplotlib
