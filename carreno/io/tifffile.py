@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-
 import tifffile as tif
 
 def metadata(path):

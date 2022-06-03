@@ -5,5 +5,6 @@ tifffile
 gdown
 patool
 pyunpack
+scikit-image
 scikit-learn
 bm3d

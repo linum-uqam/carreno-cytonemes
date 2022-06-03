@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from scipy import ndimage as nd
 import numpy as np
 from skimage.morphology import skeletonize_3d

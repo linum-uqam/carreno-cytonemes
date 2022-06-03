@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import numpy as np
 from scipy import ndimage as nd
 from carreno.utils.util import euclidean_dist

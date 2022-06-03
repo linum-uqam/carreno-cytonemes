@@ -1,5 +1,5 @@
+# -*- coding: utf-8 -*-
 import numpy as np
-
 
 def normalize(x, minv=0, maxv=1):
     """Normalize array between given range
