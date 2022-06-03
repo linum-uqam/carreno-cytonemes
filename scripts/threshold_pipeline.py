@@ -4,15 +4,17 @@ import csv
 import numpy as np
 from carreno.segment.threshold import primary_object
 from carreno.cytoneme.path import skeletonized_cell_paths, clean_cyto_paths
+from carreno.io.tifffile import metadata
 from carreno.utils.morphology import separate_blob, create_sphere
 from carreno.utils.util import euclidean_dist
 
-filename = "data/dataset/input/0.tif"  # path to a tif volume with cell(s)
-distances = [1, 1, 1]  # axis distances in order
+##############
+# Parameters
+##############
+filename = "data/dataset/input/0.tif"  # path to an imagej tif volume with cell(s)
 denoise = None  # denoise volume ("bm", "nlm", None)
 psf = "data/psf/Averaged PSF.tif"  # another denoising option for applying richardson lucy filter
 sharpen = True  # sharpens volume before segmentation with maximum gaussian 2e derivative
-
 
 def cells_info_csv(filename, cells_info, distances):
     """Write paths info for one cell into a csv file
@@ -71,6 +73,15 @@ def cells_info_csv(filename, cells_info, distances):
 
 
 def main():
+    try:
+        # assuming unit is um
+        distances = metadata(filename)["axe_dist"]
+        # convert scale to picometer like in imagej since selem is scaled for it
+        distances = np.array(distances) * 1e6
+    except:
+        # if we don't have axis info, use default distances
+        distances = np.array([0.26, 0.1201058, 0.1201058])
+        
     cells_info = []
     
     # get cell(s) mask
@@ -101,13 +112,11 @@ def main():
         filtered_path, filtered_prob = clean_cyto_paths(path, prob)
                 
         # give result in a csv file
-        cells_info.append({
-            'body_z': [body_z_start, body_z_end],
-            'path': filtered_path,
-            'odds': filtered_prob
-        })
+        cells_info.append({'body_z': [body_z_start, body_z_end],
+                           'path': filtered_path,
+                           'odds': filtered_prob})
     
-    filename_csv = filename.rsplit( ".", 1 )[0] + '.csv'
+    filename_csv = filename.rsplit(".", 1)[0] + '.csv'
     cells_info_csv(filename_csv, cells_info, distances)
 
 

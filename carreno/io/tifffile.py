@@ -105,7 +105,5 @@ def write_imagej_tif(path, x, axes="ZYX", distances=[1, 1, 1], units=['µm', 'µ
         info_meta += create_line(dist_val, i, sep, str(distances[i]))
     
     tif.imwrite(path, x, imagej=True,
-                metadata={
-                    'axes': axes,
-                    "Info": info_meta
-                })
+                metadata={'axes': axes,
+                          'Info': info_meta})
