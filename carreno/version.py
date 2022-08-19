@@ -23,7 +23,7 @@ CLASSIFIERS = ["Development Status :: 0 - WIP",
                "License :: OSI Approved :: TODO",
                "Operating System :: OS Independent",
                "Programming Language :: Python",
-               "Topic :: Scientific/Engineering"]
+               "Topic :: Scientific/Biology"]
 
 # Description should be a one-liner:
 description = "Carreno Cytonemes: cytonemes metrics from volumetric data"

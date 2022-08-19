@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import matplotlib.pyplot as plt
 import numpy as np
-from carreno.utils.patchify import *
+from carreno.processing.patchify import patchify, unpatchify
 
 def makeGaussian(size, fwhm = 3, center=None):
     # https://stackoverflow.com/questions/7687679/how-to-generate-2d-gaussian-with-python

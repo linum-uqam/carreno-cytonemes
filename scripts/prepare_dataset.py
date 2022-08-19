@@ -7,7 +7,7 @@ import os
 from pyunpack import Archive
 from carreno.io.fetcher import fetch_folder, folders_id
 from carreno.utils.util import normalize
-from carreno.utils.patchify import patchify
+from carreno.processing.patchify import patchify
 
 download = True  # False if the folders are already downloaded
 create_dataset = True  # uncompress and organise downloads
