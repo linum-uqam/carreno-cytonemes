@@ -55,8 +55,8 @@ def cells_info_csv(filename, cells_info, distances):
                     # update path length
                     if j + 1 < n:
                         length += euclidean_dist(cells_info[cell_id]['path'][i][j],
-                                                       cells_info[cell_id]['path'][i][j+1],
-                                                       distances)
+                                                 cells_info[cell_id]['path'][i][j+1],
+                                                 distances)
     
     print('Results written in', filename)
     

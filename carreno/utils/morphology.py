@@ -86,7 +86,8 @@ def getNeighbors3D(index, x):
 
 
 def separate_blob(body_mask, cell_mask=None, min_dist=2, distances=[1, 1, 1]):
-    """Attempt at Separating blobs using foreground pixels distance from background pixels.
+    """Attempt at Separating blobs using foreground pixels distance from background
+    pixels to find center and reconstruct with watershed.
     Parameters
     ----------
     mask : list, ndarray

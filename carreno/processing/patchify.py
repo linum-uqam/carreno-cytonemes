@@ -62,7 +62,7 @@ def patchify(x, patch_shape, mode=2, stride=None):
         # nearest neighbors resize
         resized = resize(resized, resize_shape,
                          order=0, preserve_range=True,
-                         anti_aliasing=False)  
+                         anti_aliasing=False)
     elif mode == 2:
         # bi-linear
         resized = resize(resized, resize_shape,
@@ -108,7 +108,7 @@ def unpatchify(patches, order, stride=None):
     patch_center = []
     nd_shape = []
     tw_dim = is_2D(stride)
-        
+    
     for i in range(len(order)):
         ax_length = order[i] * stride[i] + patch_shape[i] - stride[i]
         
@@ -117,6 +117,10 @@ def unpatchify(patches, order, stride=None):
                              min(patch_shape[i], center + int(np.ceil(stride[i] / 2)))])
         
         nd_shape.append(ax_length)
+    
+    # add color channels if not grayscale
+    if len(order) < len(patches.shape[1:]):
+        nd_shape.append(patches.shape[-1])
             
     nd = np.zeros(nd_shape)
     p_i = 0
@@ -148,3 +152,39 @@ def unpatchify(patches, order, stride=None):
                     p_i += 1
     
     return nd
+
+
+def volume_pred_from_img(model, x, stride):
+    """
+    Parameters
+    ----------
+    model : tf.keras.Model
+        model to predict
+    x : ndarray
+        volume to predict
+    stride : [int, int, int]
+        stride between patches
+    Returns
+    -------
+    pred_volume : ndarray
+        predicted volume
+    """
+    # get input shape
+    patch_shape = [1] + list(model.get_config()["layers"][0]["config"]["batch_input_shape"][1:-1])
+    
+    # patchify to fit inside model input
+    patch, order = patchify(x, patch_shape=patch_shape, mode=2, stride=stride)
+    
+    # remove z axis (we want an image) and add color channel
+    preprocess = np.expand_dims(np.squeeze(np.array(patch), axis=1), axis=-1)
+
+    # predict patch segmentation
+    pred_patch = model.predict(preprocess)
+
+    # add z axis again
+    postprocess = np.expand_dims(pred_patch, axis=1)
+
+    # reassemble patches into a volume
+    pred_volume = unpatchify(postprocess, order=order, stride=stride)
+
+    return pred_volume
