@@ -10,7 +10,7 @@ pip install -e .
 ```
 
 ## Dependencies
-With `pip` :
+With `pip` (download cuda on nvidia website for GPU usage):
 ```
 pip install -i requirements.txt
 ```

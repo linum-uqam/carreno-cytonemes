@@ -1,7 +1,9 @@
 name: carreno-cyto
 dependencies:
-  - python>=3
+  - python>=3.6
   - anaconda
   - pip
+  - cudatoolkit=11.2
+  - cudnn=8.1.0
   - pip:
     - -r requirements.txt

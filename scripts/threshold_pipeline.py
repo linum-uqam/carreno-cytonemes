@@ -2,15 +2,12 @@
 import tifffile as tif
 from skimage.morphology import binary_opening
 import numpy as np
-from carreno.segment.threshold import primary_object
+from carreno.threshold.threshold import primary_object
 from carreno.cytoneme.path import skeletonized_cell_paths, clean_cyto_paths
 from carreno.io.tifffile import metadata
 from carreno.io.csv import cells_info_csv
 from carreno.utils.morphology import separate_blob, create_sphere
 
-##############
-# Parameters
-##############
 filename = "data/dataset/input/0.tif"  # path to an imagej tif volume with cell(s)
 denoise = None  # denoise volume ("bm", "nlm", None)
 psf = "data/psf/Averaged PSF.tif"  # another denoising option for applying richardson lucy filter
@@ -55,11 +52,11 @@ def main():
         # filter cytonemes
         filtered_path, filtered_prob = clean_cyto_paths(path, prob)
                 
-        # give result in a csv file
         cells_info.append({'body_z': [body_z_start, body_z_end],
                            'path': filtered_path,
                            'odds': filtered_prob})
     
+    # save results in a csv file
     filename_csv = filename.rsplit(".", 1)[0] + '.csv'
     cells_info_csv(filename_csv, cells_info, distances)
 
