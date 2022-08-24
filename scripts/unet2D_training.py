@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from pathlib import Path
 from skimage.transform import resize
+from sklearn.metrics import confusion_matrix
 
 import carreno.nn.unet as unet
 import carreno.nn.callbacks as ccb
@@ -25,7 +26,7 @@ test_volume = data_folder + "/" + dataset_name + "/input/9.tif"
 test_target = data_folder + "/" + dataset_name + "/target/9.tif"
 test_save = data_folder + "/output/pred_unet2d.tif"
 nb_class = 3
-batch_size = 5
+batch_size = 16
 input_shape = [64, 64, 1]
 class_weights = "balanced"
 
@@ -55,6 +56,51 @@ def get_volumes_slices(paths):
             slices.append([path, i])
     
     return slices
+
+
+class Fit_w_confusion_matrix(tf.keras.Model):
+    def __init__(self, model):
+        super(Fit_w_confusion_matrix, self).__init__()
+        self.model = model
+        self.tcm = []
+        self.vcm = []
+    
+    def train_step(self, data):
+        x = data[0]
+        y = data[1]
+        w = None
+        if len(data) > 2:
+            w = tf.concat(concat_dims=3, values=[data[2]] * nb_class)
+        
+        # forward propagation
+        with tf.GradientTape as tape:
+            y_pred = self.model(x, training=True)
+            loss = 1e7
+            if w is None:
+                loss = self.compiled_loss(y, y_pred)
+            else:
+                loss = self.compiled_loss(y * w, y_pred * w)
+            
+        # back propagation
+        training_vars = self.trainable_variables
+        gradients = tape.gradient(loss, training_vars)
+
+        self.optimizer.apply_gradients(zip(gradients, training_vars))
+        self.compiled_metrics.update_state(y, y_pred)
+        self.tcm.append(confusion_matrix(y, y_pred))
+
+        return {"loss" : loss}.update( {m.name : m.result() for m in self.metrics} )
+    
+    def test_step(self, data):
+        x, y = data
+
+        y_pred = self.model(x, training=False)
+        loss = self.compiled_loss(y, y_pred)
+        
+        self.compiled_metrics.update_state(y, y_pred)
+        self.vcm.append(confusion_matrix(y, y_pred))
+
+        return {"val_loss" : loss}.update( {m.name : m.result() for m in self.metrics} )
 
 
 def main():
