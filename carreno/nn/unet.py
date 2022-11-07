@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import tensorflow as tf
 
-
 def two_conv(input, n_feat=32, conv_size=[3,3]):
     """
     2 convolution layers to add with batch normalisation

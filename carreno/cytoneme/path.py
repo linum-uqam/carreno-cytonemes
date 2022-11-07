@@ -222,10 +222,8 @@ def skeletonized_cyto_paths(body, cyto_lb, association, max_distance=5):
     body_dist = nd.distance_transform_edt(body == 0)
     
     for lb in association:
-        c = cyto_lb == lb
-        
         # skeletonization of cell and get connectivity matrix
-        coordinate, matrix = connectivity_matrix(c)
+        coordinate, matrix = connectivity_matrix(cyto_lb == lb)
         
         # get start and end points for cytonemes in group
         start_point_id = []
@@ -233,8 +231,8 @@ def skeletonized_cyto_paths(body, cyto_lb, association, max_distance=5):
         for i in range(matrix.shape[0]):
             # 1 neighbors means it's either a start point or an end point
             if matrix[i].sum() == 1:
-                d, r, c = coordinate[i]
-                if body_dist[d, c, r] <= max_distance:
+                z, y, x = coordinate[i]
+                if body_dist[z, y, x] <= max_distance:
                     start_point_id.append(i)
                 else:
                     end_point_id.append(i)

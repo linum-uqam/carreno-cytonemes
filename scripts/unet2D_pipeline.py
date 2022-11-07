@@ -18,8 +18,8 @@ data_folder = "data"  # folder where downloads and dataset will be put
 dataset_folder = data_folder + "/dataset"
 output_folder  = data_folder + "/output"
 model_path = data_folder + "/model/test.h5"
-filename  = dataset_folder + "/input/0.tif"  # path to an imagej tif volume with cell(s)
-csv_output = output_folder + "/" + filename.rsplit(".", 1)[0] + '.csv'
+filename  = dataset_folder + "/input/slik3.tif"  # path to an imagej tif volume with cell(s)
+csv_output = output_folder + "/" + filename.split("/")[-1].split(".", 1)[0] + '_unet2D.csv'
 
 # Replace or merge with seperate_blob implementations in carreno.utils.morphology
 def seperate_blobs(x, min_dist=10, distances=[1, 1, 1]):
