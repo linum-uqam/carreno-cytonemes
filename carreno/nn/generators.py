@@ -81,6 +81,8 @@ class volume_slice_generator(tf.keras.utils.Sequence):
             
             batch.append(sample_weights)
 
+        self.batch = batch  # lets us get the latest batch in callbacks
+
         return batch
         
     def on_epoch_end(self):

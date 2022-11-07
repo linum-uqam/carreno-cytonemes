@@ -1,14 +1,21 @@
 # -*- coding: utf-8 -*-
 import tifffile as tif
-from skimage.morphology import binary_opening
 import numpy as np
+import os
+from skimage.morphology import binary_opening
+from pathlib import Path
+
 from carreno.threshold.threshold import primary_object
 from carreno.cytoneme.path import skeletonized_cell_paths, clean_cyto_paths
 from carreno.io.tifffile import metadata
 from carreno.io.csv import cells_info_csv
 from carreno.utils.morphology import separate_blob, create_sphere
 
-filename = "data/dataset/input/0.tif"  # path to an imagej tif volume with cell(s)
+filename = "data/dataset/input/slik3.tif"  # path to an imagej tif volume with cell(s)
+data_folder = "data"  # folder where downloads and dataset will be put
+output_folder  = data_folder + "/output"
+csv_output = output_folder + "/" + filename.split("/")[-1].split(".", 1)[0] + '_threshold.csv'
+
 denoise = None  # denoise volume ("bm", "nlm", None)
 psf = "data/psf/Averaged PSF.tif"  # another denoising option for applying richardson lucy filter
 sharpen = True  # sharpens volume before segmentation with maximum gaussian 2e derivative
@@ -57,8 +64,9 @@ def main():
                            'odds': filtered_prob})
     
     # save results in a csv file
-    filename_csv = filename.rsplit(".", 1)[0] + '.csv'
-    cells_info_csv(filename_csv, cells_info, distances)
+    folder = os.path.dirname(csv_output)
+    Path(folder).mkdir(parents=True, exist_ok=True)
+    cells_info_csv(csv_output, cells_info, distances)
 
 
 if __name__ == "__main__":
