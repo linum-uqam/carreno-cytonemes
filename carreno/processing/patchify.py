@@ -188,3 +188,36 @@ def volume_pred_from_img(model, x, stride):
     pred_volume = unpatchify(postprocess, order=order, stride=stride)
 
     return pred_volume
+
+
+def volume_pred_from_vol(model, x, stride):
+    """
+    Parameters
+    ----------
+    model : tf.keras.Model
+        model to predict
+    x : ndarray
+        volume to predict
+    stride : [int, int, int]
+        stride between patches
+    Returns
+    -------
+    pred_volume : ndarray
+        predicted volume
+    """
+    # get input shape
+    patch_shape = [1] + list(model.get_config()["layers"][0]["config"]["batch_input_shape"][1:-1])
+    
+    # patchify to fit inside model input
+    patch, order = patchify(x, patch_shape=patch_shape, mode=2, stride=stride)
+    
+    # add color channel
+    preprocess = np.expand_dims(np.array(patch), axis=-1)
+
+    # predict patch segmentation
+    pred_patch = model.predict(preprocess)
+
+    # reassemble patches into a volume
+    pred_volume = unpatchify(pred_patch, order=order, stride=stride)
+
+    return pred_volume
