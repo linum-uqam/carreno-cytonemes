@@ -6,7 +6,7 @@ from sklearn.utils import shuffle
 
 def balanced_class_weights(labels):
     """
-    TODO make another python file for sample weight creation
+    TODO make another script for sample weight creation?
     """
     # assume y is categorical (1 channel per class)
     weights = []
@@ -33,11 +33,11 @@ class volume_slice_generator(tf.keras.utils.Sequence):
         Data generator for 2D model training
         Parameters
         ----------
-        vol : [str]
-            path to volume
-        label : [str]
-            path to volume
-        augmentation : volumentations.Compose
+        img : [[str, int]]
+            path to volume followed by volume slice index
+        label : [[str, int]]
+            path to volume followed by volume slice index
+        augmentation : albumentations.Compose
             composition of transformations
         size : int
             batch size
@@ -46,6 +46,7 @@ class volume_slice_generator(tf.keras.utils.Sequence):
         weight : str, None
             apply sample weight for unbalanced dataset
             -"balanced" : (1/instances) * (total/nb_classes)
+
         """
         self.x = vol
         self.y = label
@@ -53,9 +54,9 @@ class volume_slice_generator(tf.keras.utils.Sequence):
         self.aug = augmentation
         self.shuffle = shuffle
         if not weight is None:
-            self.w = balanced_class_weights(self.y)
+            self.w = balanced_class_weights(list(set([path for path, slc in self.y])))
         if len(self.x) > 0:
-            self.__missing_color_ch = len(tif.imread(self.x[0]).shape) < 4
+            self.__missing_color_ch = len(tif.imread(self.x[0][0]).shape) < 4
     
     def __len__(self):
         # number of batch (some img might not be included in the epoch)

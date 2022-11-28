@@ -3,17 +3,17 @@ import tensorflow as tf
 import numpy as np
 
 class UNet:
-    def __init__(self, shape, depth=3, n_classes=3, n_feat=32):
+    def __init__(self, shape, n_class=3, depth=3, n_feat=32):
         """
         Create a UNet architecture
         Parameters
         ----------
         shape : (int, int, int)
             Image shape. Even if grayscale, we must have a color channel
-        depth : int
-            UNet number of levels
         n_class : int
             Number of unique labels
+        depth : int
+            UNet number of levels (nb of encoder block + 1)
         n_feat : int
             Number of features for the first encoder block (will increase and decrease according to UNet architecture)
         Returns
@@ -22,14 +22,14 @@ class UNet:
             Keras model waiting to be compiled for training
         """
         self.depth = depth
-        self.n_dim = len(shape) - 1
-        self.kernel_size_conv = [3] * self.n_dim  # kernel size for sampling operation is smaller on first axis since it's very short
-        self.kernel_size_sampling = [2] * self.n_dim
+        self.ndim = len(shape) - 1
+        self.kernel_size_conv = [3] * self.ndim  # kernel size for sampling operation is smaller on first axis since it's very short
+        self.kernel_size_sampling = [2] * self.ndim
 
         self.conv_layer_f = tf.keras.layers.Conv2D
         self.pool_layer_f = tf.keras.layers.MaxPooling2D
         self.transpose_layer_f = tf.keras.layers.Conv2DTranspose
-        if self.n_dim == 3:
+        if self.ndim == 3:
             self.conv_layer_f = tf.keras.layers.Conv3D
             self.pool_layer_f = tf.keras.layers.MaxPooling3D
             self.transpose_layer_f = tf.keras.layers.Conv3DTranspose
@@ -54,7 +54,7 @@ class UNet:
                                                skip_layer[i],
                                                n_feat * (2 ** i))
         
-        self.output = self.conv_layer_f(filters=n_classes,
+        self.output = self.conv_layer_f(filters=n_class,
                                         kernel_size=1,
                                         padding="same",
                                         activation="softmax")(current_layer)
@@ -206,15 +206,13 @@ def weight2D_to_3D(weights, dim):
     return weight3D
 
 
-def unet2D_to_unet3D(unet2D, depth, shape):
+def unet2D_to_unet3D(unet2D, shape):
     """
     Go over every 2D layers and convert 2D weights to 3D if available
     Parameters
     ----------
     unet2D : tf.keras.Model
         2D UNet to convert
-    depth : int
-        UNet depth (nb skip connection - 1)
     shape : list
         input shape for 3D input
     Returns
@@ -222,12 +220,16 @@ def unet2D_to_unet3D(unet2D, depth, shape):
     unet3D : UNet
         3D UNet with 2D weights
     """
-    n_classes = unet2D.layers[-1].get_weights()[1].shape[0]
+    n_class = unet2D.layers[-1].get_weights()[1].shape[0]
     n_feat = unet2D.layers[1].get_weights()[1].shape[0]
+    depth = 1
+    for i in range(len(unet2D.layers)):
+        if 'POOL' in unet2D.layers[i].name.upper():
+            depth += 1
     
     unet3D = UNet(shape=shape,
-                  depth=unet2D.depth,
-                  n_classes=n_classes,
+                  depth=depth,
+                  n_class=n_class,
                   n_feat=n_feat)
     model3D = unet3D.model
     
@@ -236,10 +238,11 @@ def unet2D_to_unet3D(unet2D, depth, shape):
         layer3D = model3D.layers[i]
         
         # layer name without default tf int ID (layer_name_ID)
-        name2D = layer2D.name.rsplit('_', 1)[0]
+        # do not use, tf.keras first layer instance doesn't end with _#
+        #name2D = layer2D.name.rsplit('_', 1)[0]
         
         # must transfer 2D weights to 3D
-        if '2d' in name2D:
+        if '2d' in layer2D.name:
             try:
                 weights2D = layer2D.get_weights()
                 weights3D = layer3D.get_weights()
@@ -251,7 +254,8 @@ def unet2D_to_unet3D(unet2D, depth, shape):
                 
                 layer3D.set_weights(weights3D)
             except:
+                # probably a pooling operation without weights
                 #print('Could not transfer layer', name2D, 'to', name3D)
                 pass
     
-    return unet3D
+    return model3D
