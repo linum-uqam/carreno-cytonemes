@@ -28,7 +28,7 @@ unet2d_model =   output_folder +  "/model/unet2D.h5"
 info_path =      output_folder +  "/" + Path(model_path).name.split('.')[0]
 nb_class = 3
 batch_size = 8
-nb_epochs = 2
+nb_epochs = 50
 input_shape = [64, 64, 64, 1]
 class_weights = "balanced"
 
