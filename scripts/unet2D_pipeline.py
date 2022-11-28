@@ -31,7 +31,7 @@ def seperate_blobs(x, min_dist=10, distances=[1, 1, 1]):
     min_dist : float
         minimum distance between seeds for watershed
     distances : list, ndarray
-        axis distances in order
+        axis distances in order (TODO not used)
     Returns
     -------
     label : ndarray
