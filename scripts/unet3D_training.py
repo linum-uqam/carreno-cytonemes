@@ -24,26 +24,27 @@ target_folder =  dataset_folder + "/target_p"
 test_volume =    dataset_folder + "/input/slik3.tif"
 test_target =    dataset_folder + "/target/slik3.tif"
 model_path =     output_folder +  "/model/unet3D.h5"
+unet2d_model =   output_folder +  "/model/unet2D.h5"
 info_path =      output_folder +  "/" + Path(model_path).name.split('.')[0]
 nb_class = 3
-batch_size = 10
-nb_epochs = 1
+batch_size = 8
+nb_epochs = 2
 input_shape = [64, 64, 64, 1]
 class_weights = "balanced"
-unet2d_model = None
 
 # visualization
 test_split          = 1  # show if data split info
-test_generator      = 1  # show training gen output
+test_generator      = 0  # show training gen output
 test_architecture   = 1  # show model summary
-test_prediction     = 1  # show a few prediction slices
+test_prediction     = 0  # show a few prediction slices
 
 def main():
     # split data between training, validation and test
     x_data = []
     x_test = []
+    test_vol_name = Path(test_volume).name.split('.')[0]
     for f in os.listdir(input_folder):
-        if Path(test_volume).name.split('.')[0] in f.split('_')[0]:
+        if test_vol_name in f.split('_')[0]:
             x_test.append(input_folder + "/" + f)
         else:
             x_data.append(input_folder + "/" + f)
@@ -51,7 +52,7 @@ def main():
     y_data = []
     y_test = []
     for f in os.listdir(target_folder):
-        if Path(test_volume).name.split('.')[0] in f.split('_')[0]:
+        if test_vol_name in f.split('_')[0]:
             y_test.append(target_folder + "/" + f)
         else:
             y_data.append(target_folder + "/" + f)            
@@ -141,9 +142,8 @@ def main():
         model = UNet(input_shape, nb_class).model
     else:
         # transfer learning
-        unet2D = tf.keras.models.load_model(unet2d_model)
+        unet2D = tf.keras.models.load_model(unet2d_model, compile=False)
         model = unet2D_to_unet3D(unet2D,
-                                 depth=3,
                                  shape=input_shape)
 
     if test_architecture:
@@ -181,12 +181,18 @@ def main():
                         batch_size=batch_size,
                         epochs=nb_epochs,
                         verbose=1,
-                        callbacks=[model_checkpoint, early_stop, cm_history])
+                        callbacks=[
+                            model_checkpoint,
+                            early_stop,
+                            #cm_history
+                        ])
 
-    # save confusion matrix history in callback
-    np.save(info_path + "_tcm.npy", np.stack(cm_history.tcm, axis=0))  # training cm
-    np.save(info_path + "_vcm.npy", np.stack(cm_history.vcm, axis=0))  # validation cm
-
+    # in case we didn't use cm callback to save time
+    if len(cm_history.tcm) > 0:
+        # save confusion matrix history in callback
+        np.save(info_path + "_tcm.npy", np.stack(cm_history.tcm, axis=0))  # training cm
+        np.save(info_path + "_vcm.npy", np.stack(cm_history.vcm, axis=0))  # validation cm
+    
     # metrics display (acc, loss, etc.)
     loss_hist = history.history['loss']
     val_loss_hist = history.history['val_loss']
@@ -222,7 +228,7 @@ def main():
     best_model = tf.keras.models.load_model(model_path, compile=False)
 
     volume_patch_shape = input_shape[:-1]
-    stride = [1] + [i // 2 for i in volume_patch_shape[1:]]
+    stride = [i // 2 for i in volume_patch_shape]
 
     tvol = tif.imread(test_volume)
     ttar = tif.imread(test_target).astype(float)  # can't be boolean for plt

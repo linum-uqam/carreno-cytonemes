@@ -9,8 +9,8 @@ from sklearn.model_selection import train_test_split
 from pathlib import Path
 from skimage.transform import resize
 
-import carreno.nn.unet as unet
 import carreno.nn.callbacks as cb
+from carreno.nn.unet import UNet
 from carreno.nn.generators import volume_slice_generator
 from carreno.nn.metrics import dice_score, bce_dice_loss
 from carreno.processing.patchify import volume_pred_from_img
@@ -19,24 +19,24 @@ from carreno.processing.patchify import volume_pred_from_img
 # validate dataset is present
 data_folder = "data"  # folder where downloads and dataset will be put
 dataset_folder = data_folder + "/dataset"
-output_folder = data_folder + "/output"
-input_folder  = dataset_folder + "/input_p"
-target_folder = dataset_folder + dataset_folder + "/target_p"
-model_path = data_folder + "/model/unet2D.h5"
-test_volume = data_folder + "/" + dataset_folder + "/input/slik3.tif"
-test_target = data_folder + "/" + dataset_folder + "/target/slik3.tif"
-info_path = output_folder + "/" + Path(model_path).name.split('.')[0]
+output_folder =  data_folder + "/output"
+input_folder  =  dataset_folder + "/input_p"
+target_folder =  dataset_folder + "/target_p"
+test_volume =    dataset_folder + "/input/slik3.tif"
+test_target =    dataset_folder + "/target/slik3.tif"
+model_path =     output_folder +  "/model/unet2D.h5"
+info_path =      output_folder + "/" + Path(model_path).name.split('.')[0]
 nb_class = 3
-batch_size = 10
+batch_size = 256
 nb_epochs = 50
 input_shape = [64, 64, 1]
 class_weights = "balanced"
 
 # visualization
-test_split          = 0  # show if data split info
+test_split          = 1  # show if data split info
 test_generator      = 0  # show training gen output
 test_architecture   = 0  # show model summary
-test_prediction     = 1  # show a few prediction slices
+test_prediction     = 0  # show a few prediction slices
 
 def get_volumes_slices(paths):
     """
@@ -64,8 +64,9 @@ def main():
     # split data between training, validation and test
     x_data = []
     x_test = []
+    test_vol_name = Path(test_volume).name.split('.')[0]
     for f in os.listdir(input_folder):
-        if Path(test_volume).name.split('.')[0] in f.split('_')[0]:
+        if test_vol_name in f.split('_')[0]:
             x_test.append(input_folder + "/" + f)
         else:
             x_data.append(input_folder + "/" + f)
@@ -73,7 +74,7 @@ def main():
     y_data = []
     y_test = []
     for f in os.listdir(target_folder):
-        if Path(test_volume).name.split('.')[0] in f.split('_')[0]:
+        if test_vol_name in f.split('_')[0]:
             y_test.append(target_folder + "/" + f)
         else:
             y_data.append(target_folder + "/" + f)            
@@ -83,7 +84,7 @@ def main():
                                                           test_size=0.2,
                                                           random_state=6)
 
-    # slice up volumes
+    # slice up volumes for img
     x_train = get_volumes_slices(x_train)
     y_train = get_volumes_slices(y_train)
     x_valid = get_volumes_slices(x_valid)
@@ -166,7 +167,7 @@ def main():
         plt.show()
 
     # get unet model
-    model = unet.unet2D(input_shape, nb_class)
+    model = UNet(input_shape, nb_class).model
 
     if test_architecture:
         model.summary()
@@ -203,11 +204,17 @@ def main():
                         batch_size=batch_size,
                         epochs=nb_epochs,
                         verbose=1,
-                        callbacks=[model_checkpoint, early_stop, cm_history])
+                        callbacks=[
+                            model_checkpoint,
+                            early_stop,
+                            #cm_history
+                        ])
 
-    # save confusion matrix history in callback
-    np.save(info_path + "_tcm.npy", np.stack(cm_history.tcm, axis=0))  # training cm
-    np.save(info_path + "_vcm.npy", np.stack(cm_history.vcm, axis=0))  # validation cm
+    # in case we didn't use cm callback to save time
+    if len(cm_history.tcm) > 0:
+        # save confusion matrix history in callback
+        np.save(info_path + "_tcm.npy", np.stack(cm_history.tcm, axis=0))  # training cm
+        np.save(info_path + "_vcm.npy", np.stack(cm_history.vcm, axis=0))  # validation cm
 
     # metrics display (acc, loss, etc.)
     loss_hist = history.history['loss']

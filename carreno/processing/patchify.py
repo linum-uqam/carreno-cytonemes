@@ -206,8 +206,8 @@ def volume_pred_from_vol(model, x, stride):
         predicted volume
     """
     # get input shape
-    patch_shape = [1] + list(model.get_config()["layers"][0]["config"]["batch_input_shape"][1:-1])
-    
+    patch_shape = list(model.get_config()["layers"][0]["config"]["batch_input_shape"][1:-1])
+
     # patchify to fit inside model input
     patch, order = patchify(x, patch_shape=patch_shape, mode=2, stride=stride)
     
