@@ -13,14 +13,14 @@ from pathlib import Path
 from carreno.cytoneme.path import skeletonized_cyto_paths, clean_cyto_paths
 from carreno.io.tifffile import metadata
 from carreno.io.csv import cells_info_csv
-from carreno.processing.patchify import volume_pred_from_img
+from carreno.processing.patchify import volume_pred_from_vol
 
 data_folder = "data"  # folder where downloads and dataset will be put
 dataset_folder = data_folder + "/dataset"
 output_folder  = data_folder + "/output"
-model_path = data_folder + "/model/test.h5"
-filename  = dataset_folder + "/input/slik3.tif"  # path to an imagej tif volume with cell(s)
-csv_output = output_folder + "/" + filename.split("/")[-1].split(".", 1)[0] + '_unet2D.csv'
+filename       = dataset_folder + "/input/slik3.tif"  # path to an imagej tif volume with cell(s)
+model_path     = output_folder + "/model/unet3D.h5"
+csv_output     = output_folder + "/" + filename.split("/")[-1].split(".", 1)[0] + '_unet3D.csv'
 
 # Replace or merge with seperate_blob implementations in carreno.utils.morphology
 def seperate_blobs(x, min_dist=10, distances=[1, 1, 1]):
@@ -106,11 +106,11 @@ def main():
     volume = tif.imread(filename)
     
     # seperate volume in patches
-    patch_shape = list(model.get_config()["layers"][0]["config"]["batch_input_shape"][1:])
-    stride = [1] + [i // 2 for i in patch_shape[:-1]]
-    
+    volume_patch_shape = list(model.get_config()["layers"][0]["config"]["batch_input_shape"][1:-1])
+    stride = [i // 2 for i in volume_patch_shape]
+
     # predict volume
-    pred = volume_pred_from_img(model, volume, stride=stride)
+    pred = volume_pred_from_vol(model, volume, stride=stride)
     
     # keep volume shape which might have changed with patchify
     pred = resize(pred,
