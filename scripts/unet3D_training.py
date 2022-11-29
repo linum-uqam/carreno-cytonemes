@@ -3,62 +3,40 @@ import numpy as np
 import tifffile as tif
 import os
 import tensorflow as tf
-import albumentations as A
+import volumentations as V
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from pathlib import Path
 from skimage.transform import resize
 
+from carreno.nn.unet import UNet, unet2D_to_unet3D
 import carreno.nn.callbacks as cb
-from carreno.nn.unet import UNet
-from carreno.nn.generators import volume_slice_generator
+from carreno.nn.generators import volume_generator
 from carreno.nn.metrics import dice_score, bce_dice_loss
-from carreno.processing.patchify import volume_pred_from_img
-
+from carreno.processing.patchify import volume_pred_from_vol
 
 # validate dataset is present
 data_folder = "data"  # folder where downloads and dataset will be put
-dataset_folder = data_folder + "/dataset"
-output_folder =  data_folder + "/output"
-input_folder  =  dataset_folder + "/input_p"
-target_folder =  dataset_folder + "/target_p"
-test_volume =    dataset_folder + "/input/slik3.tif"
-test_target =    dataset_folder + "/target/slik3.tif"
-model_path =     output_folder +  "/model/unet2D.h5"
-info_path =      output_folder + "/" + Path(model_path).name.split('.')[0]
+dataset_folder = data_folder +    "/dataset"
+output_folder  = data_folder +    "/output"
+input_folder   = dataset_folder + "/input_p"
+target_folder  = dataset_folder + "/target_p"
+test_volume    = dataset_folder + "/input/slik3.tif"
+test_target    = dataset_folder + "/target/slik3.tif"
+model_path     = output_folder +  "/model/unet3D.h5"
+unet2d_model   = output_folder +  "/model/unet2D.h5"
+info_path      = output_folder +  "/" + Path(model_path).name.split('.')[0]
 nb_class = 3
-batch_size = 256
+batch_size = 8
 nb_epochs = 50
-input_shape = [64, 64, 1]
+input_shape = [64, 64, 64, 1]
 class_weights = "balanced"
 
 # visualization
 test_split          = 1  # show if data split info
 test_generator      = 0  # show training gen output
-test_architecture   = 0  # show model summary
+test_architecture   = 1  # show model summary
 test_prediction     = 0  # show a few prediction slices
-
-def get_volumes_slices(paths):
-    """
-    Get all slice index for all the volumes in list of paths
-    Parameters
-    ----------
-    paths : [str]
-        Paths to volumes to slice up
-    Returns
-    -------
-    slices : [[str, int]]
-        list of list containing volume names and slice indexes
-    """
-    slices = []
-
-    for path in paths:
-        tif_file = tif.TiffFile(path)
-        for i in range(len(tif_file.pages)):
-            slices.append([path, i])
-    
-    return slices
-
 
 def main():
     # split data between training, validation and test
@@ -84,60 +62,51 @@ def main():
                                                           test_size=0.2,
                                                           random_state=6)
 
-    # slice up volumes for img
-    x_train = get_volumes_slices(x_train)
-    y_train = get_volumes_slices(y_train)
-    x_valid = get_volumes_slices(x_valid)
-    y_valid = get_volumes_slices(y_valid)
-    x_test  = get_volumes_slices(x_test)
-    y_test  = get_volumes_slices(y_test)
-
     if test_split:
         print("Training dataset")
         print("-nb of volumes :",
-              [j for i, j in x_train].count(0), "/",
-              [j for i, j in y_train].count(0))
-        print("-nb of slices :", len(x_train), "/", len(y_train))
+              len(x_train), "/",
+              len(y_train))
         
         print("Validation dataset")
         print("-nb of volumes :",
-              [j for i, j in x_valid].count(0), "/",
-              [j for i, j in y_valid].count(0))
-        print("-nb of slices :", len(x_valid), "/", len(y_valid))
+              len(x_valid), "/",
+              len(y_valid))
         
         # not using the patch, only the full volume for test for now
         print("Testing dataset")
         print("-nb of volumes :",
-              [j for i, j in x_test].count(0), "/",
-              [j for i, j in y_test].count(0))
-        print("-nb of slices :", len(x_test), "/", len(y_test))
+              len(x_test), "/",
+              len(y_test))
         
     # setup data augmentation
-    aug = A.Compose([
-        A.Rotate(limit=90, interpolation=1, border_mode=4, p=0.2),
-        A.RandomRotate90((1, 2), p=0.2),
-        A.Flip(0, p=0.2),
-        A.Flip(1, p=0.2),
-        A.Resize(input_shape[0], input_shape[1], interpolation=1, always_apply=True, p=1)
+    aug = V.Compose([
+        V.RandomRotate90((1, 2), p=0.2),
+        V.Flip(0, p=0.2),
+        V.Flip(1, p=0.2),
+        V.Rotate((-90, 90), (0,0), (0, 0), border_mode='reflect', p=0.2),
+        V.ElasticTransformPseudo2D(alpha=40, sigma=10, alpha_affine=1, p=0.2),
+        #V.ElasticTransform((0, 0.10), interpolation=1, border_mode='reflect', p=0.2),
+        #V.Resize(input_shape[:-1], interpolation=1, always_apply=True, p=1)  # (don't include color channel in shape) TODO doesn't work animore
     ], p=1)
 
     # ready up the data generators
-    train_gen = volume_slice_generator(x_train,
-                                       y_train,
-                                       batch_size,
-                                       augmentation=aug,
-                                       shuffle=True,
-                                       weight=class_weights)
-    valid_gen = volume_slice_generator(x_valid,
-                                       y_valid,
-                                       batch_size,
-                                       augmentation=None,
-                                       shuffle=False)
-    test_gen  = volume_slice_generator(x_test,
-                                       y_test,
-                                       batch_size,
-                                       augmentation=None,
-                                       shuffle=False)
+    train_gen = volume_generator(x_train,
+                                 y_train,
+                                 batch_size,
+                                 augmentation=aug,
+                                 shuffle=True,
+                                 weight=class_weights)
+    valid_gen = volume_generator(x_valid,
+                                 y_valid,
+                                 batch_size,
+                                 augmentation=None,
+                                 shuffle=False)
+    test_gen  = volume_generator(x_test,
+                                 y_test,
+                                 batch_size,
+                                 augmentation=None,
+                                 shuffle=False)
     
     train_gen.on_epoch_end()  # shuffle
 
@@ -156,18 +125,26 @@ def main():
         plt.figure(figsize=(10,20))
         
         # cool visuals which are a joy to debug
+        z = 15
         nb_columns = len(batch0)
         for i in range(batch_size):
             for j, k in zip(range(1, nb_columns+1), ['x', 'y', 'w']):
                 plt.subplot(batch_size, nb_columns, i*nb_columns+j)
                 plt.title(k + " " + str(i), fontsize=12)
-                plt.imshow(batch0[j-1][i], vmin=batch0[j-1].min(), vmax=batch0[j-1].max())
+                plt.imshow(batch0[j-1][i][z], vmin=batch0[j-1].min(), vmax=batch0[j-1].max())
         
         plt.tight_layout()
         plt.show()
 
     # get unet model
-    model = UNet(input_shape, nb_class).model
+    model = None
+    if unet2d_model is None:
+        model = UNet(input_shape, nb_class).model
+    else:
+        # transfer learning
+        unet2D = tf.keras.models.load_model(unet2d_model, compile=False)
+        model = unet2D_to_unet3D(unet2D,
+                                 shape=input_shape)
 
     if test_architecture:
         model.summary()
@@ -215,7 +192,7 @@ def main():
         # save confusion matrix history in callback
         np.save(info_path + "_tcm.npy", np.stack(cm_history.tcm, axis=0))  # training cm
         np.save(info_path + "_vcm.npy", np.stack(cm_history.vcm, axis=0))  # validation cm
-
+    
     # metrics display (acc, loss, etc.)
     loss_hist = history.history['loss']
     val_loss_hist = history.history['val_loss']
@@ -250,14 +227,15 @@ def main():
     # test prediction
     best_model = tf.keras.models.load_model(model_path, compile=False)
 
-    volume_patch_shape = [1] + input_shape[:-1]
-    stride = [1] + [i // 2 for i in volume_patch_shape[1:]]
+    volume_patch_shape = input_shape[:-1]
+    stride = [i // 2 for i in volume_patch_shape]
 
     tvol = tif.imread(test_volume)
     ttar = tif.imread(test_target).astype(float)  # can't be boolean for plt
-    pred = volume_pred_from_img(best_model,
+    pred = volume_pred_from_vol(best_model,
                                 tvol,
                                 stride=stride)
+
     ttar = resize(ttar,
                   output_shape=pred.shape,
                   order=0,
