@@ -18,14 +18,14 @@ from carreno.processing.patchify import volume_pred_from_vol
 # validate dataset is present
 data_folder = "data"  # folder where downloads and dataset will be put
 dataset_folder = data_folder +    "/dataset"
-output_folder =  data_folder +    "/output"
-input_folder  =  dataset_folder + "/input_p"
-target_folder =  dataset_folder + "/target_p"
-test_volume =    dataset_folder + "/input/slik3.tif"
-test_target =    dataset_folder + "/target/slik3.tif"
-model_path =     output_folder +  "/model/unet3D.h5"
-unet2d_model =   output_folder +  "/model/unet2D.h5"
-info_path =      output_folder +  "/" + Path(model_path).name.split('.')[0]
+output_folder  = data_folder +    "/output"
+input_folder   = dataset_folder + "/input_p"
+target_folder  = dataset_folder + "/target_p"
+test_volume    = dataset_folder + "/input/slik3.tif"
+test_target    = dataset_folder + "/target/slik3.tif"
+model_path     = output_folder +  "/model/unet3D.h5"
+unet2d_model   = output_folder +  "/model/unet2D.h5"
+info_path      = output_folder +  "/" + Path(model_path).name.split('.')[0]
 nb_class = 3
 batch_size = 8
 nb_epochs = 50
