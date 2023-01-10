@@ -5,6 +5,8 @@ from carreno.utils.util import euclidean_dist
 from skimage.measure import regionprops
 from skimage.feature import peak_local_max
 from skimage.segmentation import watershed
+from skimage.morphology import binary_opening
+
 
 def getNeighbors(index, data, structure=None):
     """Get neighbors around the index in data
@@ -85,80 +87,6 @@ def getNeighbors3D(index, x):
     return neighbors + np.array(index)
 
 
-def separate_blob(body_mask, cell_mask=None, min_dist=2, distances=[1, 1, 1]):
-    """Attempt at Separating blobs using foreground pixels distance from background
-    pixels to find center and reconstruct with watershed.
-    Parameters
-    ----------
-    mask : list, ndarray
-        binary mask of the cells
-    body : list, ndarray
-        binary mask of the bodies
-    min_dist : float
-        minimum distance between coordinate to be seen as the center of a cell body
-    distances : list, ndarray
-        axis distances in order
-    Returns
-    -------
-    body_labels_list : list
-        list of cells body
-    cell_labels_list : list
-        list of cells mask
-    """
-    if cell_mask is None:
-        cell_mask = body_mask.copy()
-    
-    # find 1 local max per cell
-    distance = nd.distance_transform_edt(body_mask)
-    tmp_coords = peak_local_max(distance,
-                                footprint=np.ones((52, 40, 40)),
-                                labels=body_mask)
-    
-    # min_distance doesn't work with peak_local_max when using footprint
-    # here's my version
-    if len(tmp_coords) == 0:
-        return [], []
-    
-    i = 1
-    coords = [tmp_coords[0]]
-
-    while i < len(tmp_coords):
-        far_enough = True
-        for co in coords:
-            dist = euclidean_dist(co, tmp_coords[i], distances)
-
-            if dist < min_dist:
-                far_enough = False
-                break
-
-        if far_enough:
-            coords.append(tmp_coords[i])
-
-        i += 1
-
-    coords = np.array(coords)
-    
-    # seperate the cells
-    local_max = np.zeros(distance.shape, dtype=bool)
-    local_max[tuple(coords.T)] = True
-    markers = nd.label(local_max)[0]
-    cell_labels = watershed(-distance, markers, mask=cell_mask)
-    regions = regionprops(cell_labels)
-
-    # restore cells with cytonemes
-    cell_labels_list = []
-
-    for rg in regions:
-        cell_labels_list.append(cell_labels == rg.label)
-
-    body_labels_list = []
-
-    for cell in cell_labels_list:
-        body_labels_list.append(np.logical_and(cell, body_mask))
-
-    return cell_labels_list, body_labels_list
-
-
 def create_sphere(radius, distances=[1, 1, 1]):
     """Create a ndarray containing a sphere
     Parameters
@@ -181,3 +109,39 @@ def create_sphere(radius, distances=[1, 1, 1]):
                     sphere[z, y, x] = 0
     
     return sphere
+
+
+# Replace or merge with seperate_blob implementations in carreno.utils.morphology
+def seperate_blobs(x, min_dist=10, smoothing=None, distances=[1, 1, 1]):
+    """Separate blobs using watershed. Seeds are found using the foreground pixels distance from background pixels.
+    Parameters
+    ----------
+    x : list, ndarray
+        binary mask of blobs
+    min_dist : float
+        minimum distance between seeds for watershed
+    distances : list, ndarray
+        axis distances in order (TODO not used)
+    Returns
+    -------
+    label : ndarray
+        labelled blob
+    """
+    y = x.copy()
+    if smoothing:
+        sphere = create_sphere(2, distances)
+        y = binary_opening(x, selem=sphere)
+
+    # find 1 local max per blob
+    distance = nd.distance_transform_edt(y)
+    coords = peak_local_max(distance,
+                            min_distance=min_dist,
+                            labels=y > 0)
+    
+    # seperate the cells
+    local_max = np.zeros(distance.shape, dtype=bool)
+    local_max[tuple(coords.T)] = True
+    markers = nd.label(local_max)[0]
+    label = watershed(-distance, markers, mask=y)
+
+    return label

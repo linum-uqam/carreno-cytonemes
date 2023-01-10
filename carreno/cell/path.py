@@ -1,8 +1,14 @@
 # -*- coding: utf-8 -*-
 from scipy import ndimage as nd
 import numpy as np
+import os
+from pathlib import Path
+from carreno.cell.body import associate_cytoneme
 from skimage.morphology import skeletonize_3d
-from carreno.utils.morphology import getNeighbors3D
+from carreno.processing.classify import categorical_multiclass
+from carreno.utils.morphology import getNeighbors3D, seperate_blobs
+from carreno.io.csv import cells_info_csv
+import carreno.utils.util as utils
 
 def path_length(coordinates, distances=[1, 1, 1]):
     """Get length of a list of coordinates
@@ -19,8 +25,8 @@ def path_length(coordinates, distances=[1, 1, 1]):
     """
     length = 0
         
-    for j in range(1, len(path)):
-        length += utils.point_distance(path[j-1], path[j], distances)
+    for j in range(1, len(coordinates)):
+        length += utils.euclidean_dist(coordinates[j-1], coordinates[j], distances)
     
     return length
 
@@ -106,98 +112,6 @@ def path_id_2_coordinate(path, coordinate):
     return coord_path
 
 
-def skeletonized_cell_paths(cell, body):
-    """Gets cytonemes path for a single cell using its body edge as the starting point of paths.
-    Parameters
-    ----------
-    cell : ndarray
-        mask of cell
-    body : ndarray
-        mask of cell body
-    Returns
-    -------
-    paths: list
-        cytonemes paths
-    dot_products: list
-        cytonemes dot product between each coordinates where theres an intersection
-    """
-    paths = []
-    dot_products = []
-    
-    # skeletonize cell for clear pathing
-    skeleton = skeletonize_3d(cell)
-
-    # skeleton range is [0, 255], bring back to [0, 1]
-    skeleton = skeleton / skeleton.max()
-    
-    sm_body = nd.morphology.binary_erosion(body)
-    skeleton[sm_body == True] = 0
-    
-    # we process all cytonemes per groups to simplify
-    cyto_gr, nb_gr = nd.label(skeleton,
-                              structure=np.ones((3, 3, 3)))
-
-    def position_valid(x, position, valid_val=True):
-        """Check if position is inside object in ndarray
-        Parameters
-        ----------
-        x : ndarray
-            ndarray to navigate
-        position : list
-            position to validate inside the ndarray
-        valid_val : ?
-            value to validate equality with
-        Returns
-        -------
-        __ : bool
-            if equal to valid value or not
-        """
-        pos = np.round(np.array(position)).astype(int)
-        maximum = np.array(x.shape)
-        
-        # out of bound?
-        if (pos < np.array([0,0,0])).any() or (pos >= maximum).any():
-            return False
-        
-        # inside x object?
-        return x[pos[0], pos[1], pos[2]] == valid_val
-    
-    for j in range(1, nb_gr + 1):
-        gr = cyto_gr == j
-        
-        # skeletonization of cell and get connectivity matrix
-        coordinate, matrix = connectivity_matrix(gr)
-        
-        # get start and end points for cytonemes in group
-        start_point_id = []
-        end_point_id = []
-        for i in range(matrix.shape[0]):
-            # 1 neighbors means it's either a start point or an end point
-            if matrix[i].sum() == 1:
-                if position_valid(body, coordinate[i]):
-                    start_point_id.append(i)
-                else:
-                    end_point_id.append(i)
-        
-        # get cytonemes path in current group
-        for st_p in start_point_id:
-            tmp_id_path, tmp_dot = dfs_path_search(st_p,
-                                                   coordinate,
-                                                   matrix,
-                                                   end_point_id)
-            
-            # convert paths of ids to paths of coordinates
-            coordinate_path = []
-            for p in tmp_id_path:
-                coordinate_path.append(path_id_2_coordinate(p, coordinate))
-            
-            # keep paths coordinates and probabilities
-            paths += coordinate_path
-            dot_products += tmp_dot
-    
-    return paths, dot_products
-
-
 def skeletonized_cyto_paths(body, cyto_lb, association, max_distance=5):
     """Matches cytonemes with the nearest body.
     Parameters
@@ -225,6 +139,7 @@ def skeletonized_cyto_paths(body, cyto_lb, association, max_distance=5):
         # skeletonization of cell and get connectivity matrix
         coordinate, matrix = connectivity_matrix(cyto_lb == lb)
         
+        # TODO, rethink start_point, it should be the closest voxel to body
         # get start and end points for cytonemes in group
         start_point_id = []
         end_point_id = []
@@ -406,3 +321,51 @@ def dfs_path_search(seed, coordinates, matrix, end_coordinates=None):
             visited_intersection.append(current_path[-1])
     
     return paths, paths_dot_product
+
+
+def extract_metric(pred, csv_output, distances=[1, 1, 1]):
+    # choose category based on softmax prediction
+    final_volume = categorical_multiclass(pred)
+    
+    cells_info = []
+    
+    # skeletonize cytonemes
+    cells_cyto = final_volume[..., 1]  # green
+    cyto_sk = skeletonize_3d(cells_cyto)  # range is [0, 255]
+    
+    # label cytoneme
+    cyto_lb = nd.label(cyto_sk,
+                       structure=np.ones([3,3,3]))[0]
+
+    # label body
+    cells_body = final_volume[..., 2]  # blue
+    body_lb = seperate_blobs(cells_body,
+                             smoothing=2,
+                             distances=distances)
+
+    # associate cytonemes to body
+    association = associate_cytoneme(body_lb, cyto_lb)
+
+    for i in range(body_lb.max()):
+        b = body_lb == i + 1  # body for label i+1
+        
+        # body metrics
+        coords = np.where(b)
+        body_z_start = np.amin(coords[0])
+        body_z_end = np.amax(coords[0])
+        
+        # cytonemes metrics
+        path, prob = skeletonized_cyto_paths(b, cyto_lb, association[i])
+        
+        # filter cytonemes
+        filtered_path, filtered_prob = clean_cyto_paths(path, prob)
+
+        cells_info.append({'body_z': [body_z_start, body_z_end],
+                           'path': filtered_path,
+                           'odds': filtered_prob})
+    
+    # save results in a csv file
+    # save test prediction if we want to check it out more
+    folder = os.path.dirname(csv_output)
+    Path(folder).mkdir(parents=True, exist_ok=True)
+    cells_info_csv(csv_output, cells_info, distances)

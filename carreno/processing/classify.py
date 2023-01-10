@@ -1,7 +1,7 @@
 import numpy as np
 
 def categorical_multiclass(x):
-    """Keep ndarray categorical format and makes classes exclusive
+    """Keep ndarray categorical format and makes classes exclusive (soft to hard classification)
     (multi-label to multi-class).
     Parameters
     ----------
@@ -64,3 +64,4 @@ def sparse_to_categorical(x, n_class=None):
         y[x == lb, i] = 1
 
     return y
+    
