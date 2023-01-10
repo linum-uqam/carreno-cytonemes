@@ -244,13 +244,20 @@ def hand_drawn_cyto(raw_path, drawing_path):
     -------
     None
     """
-    f = "Annotation a la main Slik et GFP"
+    #f = "Annotation a la main Slik et GFP"  # old
+    f = "Annotation Bon sens"
     data = [
-        ["GFP 1_Sample_1",   "GFP 1_Sample_1.tif", "gfp1-1"],
-        ["GFP 1_Sample_2",   "GFP 1_Sample_2.tif", "gfp1-2"],
-        ["Slik_Sample_3",    "Slik_Sample_3.tif",  "slik3"],
-        ["[Slik4-1]_data.txt", "Slik_Sample_4-1.tif",  "slik4-1"],
-        ["Slik_Sample_4-2",    "Slik_Sample_4-2.tif",  "slik4-2"]
+        ["Ctrl GFP _Sample_1",  "Ctrl GFP _Sample_1.tif",  "gfp1-1"],
+        ["Ctrl GFP 1_Sample_2", "Ctrl GFP 1_Sample_2.tif", "gfp1-2"],
+        ["GFP 2_Sample_1",      "GFP 2_Sample_1.tif",      "gfp2-1"],
+        ["GFP 2_Sample_2",      "GFP 2_Sample_2.tif",      "gfp2-2"],
+        ["GFP 2_Sample_3",      "GFP 2_Sample_3.tif",      "gfp2-3"],
+        ["GFP 3_Sample_1",      "GFP 3_Sample_1.tif",      "gfp3"],
+        ["Slik GFP 1_Sample_1", "Slik GFP 1_Sample_1.tif", "slik1-1"],
+        ["Slik GFP 1_Sample_2", "Slik GFP 1_Sample_2.tif", "slik1-2"],
+        ["Slik GFP 2_Sample_1", "Slik GFP 2_Sample_1.tif", "slik2"],
+        ["Slik GFP 3_Sample_1", "Slik GFP 3_Sample_1.tif", "slik3"],
+        ["Slik GFP 4_Sample_1", "Slik GFP 4_Sample_1.tif", "slik4"],
     ]
 
     # remove patches folders if they already exist

@@ -1,15 +1,18 @@
 # -*- coding: utf-8 -*-
 import tifffile as tif
 import numpy as np
+import scipy.ndimage as nd
 import os
-from skimage.morphology import binary_opening
+from skimage.morphology import binary_opening, skeletonize_3d
+from skimage.measure import label
 from pathlib import Path
 
 from carreno.threshold.threshold import primary_object
-from carreno.cytoneme.path import skeletonized_cell_paths, clean_cyto_paths
+from carreno.cell.body import associate_cytoneme
+from carreno.cell.path import skeletonized_cyto_paths, clean_cyto_paths
 from carreno.io.tifffile import metadata
 from carreno.io.csv import cells_info_csv
-from carreno.utils.morphology import separate_blob, create_sphere
+from carreno.utils.morphology import seperate_blobs, create_sphere
 
 filename = "data/dataset/input/slik3.tif"  # path to an imagej tif volume with cell(s)
 data_folder = "data"  # folder where downloads and dataset will be put
@@ -43,18 +46,29 @@ def main():
     body_m = binary_opening(cell_m, selem=sphere)
     
     # separate cells and get cells bodies
-    bodies, cells = separate_blob(body_m,
-                                  cell_m,
-                                  distances=distances)
+    body_lb = seperate_blobs(body_m, distances=distances)
     
-    for i in range(len(cells)):
+    # get cell(s) cytoneme mask
+    cyto_m = cell_m.copy()
+    cyto_m[body_m == 1] = 0
+    
+    # skeletonize cytonemes and label
+    cyto_sk = skeletonize_3d(cyto_m)  # range is [0, 255]
+    cyto_lb = nd.label(cyto_sk, structure=np.ones([3,3,3]))[0]
+
+    # associate cytonemes to body
+    association = associate_cytoneme(body_lb, cyto_lb)
+
+    for i in range(body_lb.max()):
+        b = body_lb == i + 1  # body for label i+1
+        
         # body metrics
-        coords = np.where(bodies[i] > 0)
+        coords = np.where(b)
         body_z_start = np.amin(coords[0])
         body_z_end = np.amax(coords[0])
         
         # cytonemes metrics
-        path, prob = skeletonized_cell_paths(bodies[i], cells[i])
+        path, prob = skeletonized_cyto_paths(b, cyto_lb, association[i])
         
         # filter cytonemes
         filtered_path, filtered_prob = clean_cyto_paths(path, prob)
