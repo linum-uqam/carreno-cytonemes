@@ -2,67 +2,39 @@
 import tensorflow as tf
 import numpy as np
 
-class UNet:
-    def __init__(self, shape, n_class=3, depth=3, n_feat=32):
-        """
-        Create a UNet architecture
-        Parameters
-        ----------
-        shape : (int, int, int)
-            Image shape. Even if grayscale, we must have a color channel
-        n_class : int
-            Number of unique labels
-        depth : int
-            UNet number of levels (nb of encoder block + 1)
-        n_feat : int
-            Number of features for the first encoder block (will increase and decrease according to UNet architecture)
-        Returns
-        -------
-        model : tf.keras.Model
-            Keras model waiting to be compiled for training
-        """
-        self.depth = depth
-        self.ndim = len(shape) - 1
-        self.kernel_size_conv = [3] * self.ndim  # kernel size for sampling operation is smaller on first axis since it's very short
-        self.kernel_size_sampling = [2] * self.ndim
 
-        self.conv_layer_f = tf.keras.layers.Conv2D
-        self.pool_layer_f = tf.keras.layers.MaxPooling2D
-        self.transpose_layer_f = tf.keras.layers.Conv2DTranspose
-        if self.ndim == 3:
-            self.conv_layer_f = tf.keras.layers.Conv3D
-            self.pool_layer_f = tf.keras.layers.MaxPooling3D
-            self.transpose_layer_f = tf.keras.layers.Conv3DTranspose
-        
-        self.input = tf.keras.layers.Input(shape)
-        
-        # encoder
-        skip_layer = []
-        current_layer = self.input
-        for i in range(depth-1):
-            skip, current_layer = self.encoder_block(current_layer,
-                                                     n_feat * (2 ** i))
-            skip_layer.append(skip)
+def UNet(shape, n_class=3, depth=3, n_feat=32):
+    """
+    Create a UNet architecture
+    Parameters
+    ----------
+    shape : (int, int, int)
+        Image shape. Even if grayscale, we must have a color channel
+    n_class : int
+        Number of unique labels
+    depth : int
+        UNet number of levels (nb of encoder block + 1)
+    n_feat : int
+        Number of features for the first encoder block (will increase and decrease according to UNet architecture)
+    Returns
+    -------
+    model : tf.keras.Model
+        Keras model waiting to be compiled for training
+    """
+    depth = depth
+    ndim = len(shape) - 1
+    kernel_size_conv =     [3] * ndim  # kernel size for sampling operation is smaller on first axis since it's very short
+    kernel_size_sampling = [2] * ndim
+    conv_layer_f = tf.keras.layers.Conv2D
+    pool_layer_f = tf.keras.layers.MaxPooling2D
+    transpose_layer_f = tf.keras.layers.Conv2DTranspose
+    if ndim == 3:
+        conv_layer_f = tf.keras.layers.Conv3D
+        pool_layer_f = tf.keras.layers.MaxPooling3D
+        transpose_layer_f = tf.keras.layers.Conv3DTranspose
 
-        # middle
-        current_layer = self.two_conv(current_layer,
-                                      n_feat * (2 ** (depth-1)))
-    
-        # decoder
-        for i in range(depth-2, -1, -1):
-            current_layer = self.decoder_block(current_layer,
-                                               skip_layer[i],
-                                               n_feat * (2 ** i))
-        
-        self.output = self.conv_layer_f(filters=n_class,
-                                        kernel_size=1,
-                                        padding="same",
-                                        activation="softmax")(current_layer)
 
-        self.model = tf.keras.Model(self.input, self.output)
-            
-
-    def two_conv(self, input, n_feat=32):
+    def two_conv(input, n_feat=32):
         """
         2 convolution layers to add with batch normalisation
         Parameters
@@ -76,20 +48,20 @@ class UNet:
         __ " tf.keras.engine.keras_tensor.KerasTensor
             last keras layer output
         """
-        conv1 = self.conv_layer_f(n_feat,
-                                  self.kernel_size_conv,
-                                  padding="same")(input)
+        conv1 = conv_layer_f(n_feat,
+                             kernel_size_conv,
+                             padding="same")(input)
         norm1 = tf.keras.layers.BatchNormalization()(conv1)
         acti1 = tf.keras.layers.LeakyReLU()(norm1)
-        conv2 = self.conv_layer_f(n_feat,
-                                  self.kernel_size_conv,
-                                  padding="same")(acti1)
+        conv2 = conv_layer_f(n_feat,
+                             kernel_size_conv,
+                             padding="same")(acti1)
         norm2 = tf.keras.layers.BatchNormalization()(conv2)
         acti2 = tf.keras.layers.LeakyReLU()(norm2)
         return acti2
 
 
-    def encoder_block(self, input, n_feat=32):
+    def encoder_block(input, n_feat=32):
         """
         Encoder block for an UNet
         Parameters
@@ -105,12 +77,12 @@ class UNet:
         down_sample : tf.keras.engine.keras_tensor.KerasTensor
             encoder block output
         """
-        skip = self.two_conv(input, n_feat)
-        down_sample = self.pool_layer_f(self.kernel_size_sampling)(skip)
+        skip = two_conv(input, n_feat)
+        down_sample = pool_layer_f(kernel_size_sampling)(skip)
         return skip, down_sample
 
 
-    def decoder_block(self, input, skip, n_feat=32):
+    def decoder_block(input, skip, n_feat=32):
         """
         Decoder block for an UNet
         Parameters
@@ -130,12 +102,41 @@ class UNet:
         out : tf.keras.engine.keras_tensor.KerasTensor
             decoder block output
         """
-        upsample = self.transpose_layer_f(n_feat,
-                                          self.kernel_size_sampling,
-                                          self.kernel_size_sampling)(input)
+        upsample = transpose_layer_f(n_feat,
+                                     kernel_size_sampling,
+                                     kernel_size_sampling)(input)
         skip_concatenate = tf.keras.layers.Concatenate()([upsample, skip])
-        out = self.two_conv(skip_concatenate, n_feat)
+        out = two_conv(skip_concatenate, n_feat)
         return out
+
+    
+    input = tf.keras.layers.Input(shape)
+    
+    # encoder
+    skip_layer = []
+    current_layer = input
+    for i in range(depth-1):
+        skip, current_layer = encoder_block(current_layer,
+                                            n_feat * (2 ** i))
+        skip_layer.append(skip)
+    # middle
+    current_layer = two_conv(current_layer,
+                             n_feat * (2 ** (depth-1)))
+
+    # decoder
+    for i in range(depth-2, -1, -1):
+        current_layer = decoder_block(current_layer,
+                                      skip_layer[i],
+                                      n_feat * (2 ** i))
+    
+    output = conv_layer_f(filters=n_class,
+                          kernel_size=1,
+                          padding="same",
+                          activation="softmax")(current_layer)
+    
+    model = tf.keras.Model(input, output)
+
+    return model
 
 
 def get_layer_parent_names(layer):
@@ -231,11 +232,10 @@ def unet2D_to_unet3D(unet2D, shape):
                   depth=depth,
                   n_class=n_class,
                   n_feat=n_feat)
-    model3D = unet3D.model
     
-    for i in range(len(model3D.layers)):
+    for i in range(len(unet3D.layers)):
         layer2D = unet2D.layers[i]
-        layer3D = model3D.layers[i]
+        layer3D = unet3D.layers[i]
         
         # layer name without default tf int ID (layer_name_ID)
         # do not use, tf.keras first layer instance doesn't end with _#
@@ -258,4 +258,4 @@ def unet2D_to_unet3D(unet2D, shape):
                 #print('Could not transfer layer', name2D, 'to', name3D)
                 pass
     
-    return model3D
+    return unet3D

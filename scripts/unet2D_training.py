@@ -167,7 +167,7 @@ def main():
         plt.show()
 
     # get unet model
-    model = UNet(input_shape, nb_class).model
+    model = UNet(input_shape, nb_class)
 
     if test_architecture:
         model.summary()

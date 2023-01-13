@@ -139,7 +139,7 @@ def main():
     # get unet model
     model = None
     if unet2d_model is None:
-        model = UNet(input_shape, nb_class).model
+        model = UNet(input_shape, nb_class)
     else:
         # transfer learning
         unet2D = tf.keras.models.load_model(unet2d_model, compile=False)
