@@ -18,7 +18,7 @@ def categorical_multiclass(x):
     y = categorical_to_sparse(x)
 
     # keep categorical format
-    y = sparse_to_categorical(y, n_class)
+    y = sparse_to_categorical(y, n_class).astype(bool)
     
     return y
 

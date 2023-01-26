@@ -24,13 +24,14 @@ input_folder  =  dataset_folder + "/input_p"
 target_folder =  dataset_folder + "/target_p"
 test_volume =    dataset_folder + "/input/slik3.tif"
 test_target =    dataset_folder + "/target/slik3.tif"
-model_path =     output_folder +  "/model/unet2D.h5"
+model_path =     output_folder +  "/model/unet2D_vgg16.h5"
 info_path =      output_folder + "/" + Path(model_path).name.split('.')[0]
 nb_class = 3
 batch_size = 256
 nb_epochs = 50
 input_shape = [64, 64, 1]
-class_weights = "balanced"
+class_weights = "balanced"  # None, "balanced"
+backbone = "vgg16"  # None, "vgg16"
 
 # visualization
 test_split          = 1  # show if data split info
@@ -167,7 +168,7 @@ def main():
         plt.show()
 
     # get unet model
-    model = UNet(input_shape, nb_class)
+    model = UNet(input_shape, nb_class, depth=5, n_feat=32, backbone=backbone)
 
     if test_architecture:
         model.summary()

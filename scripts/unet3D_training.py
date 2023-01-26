@@ -9,8 +9,9 @@ from sklearn.model_selection import train_test_split
 from pathlib import Path
 from skimage.transform import resize
 
-from carreno.nn.unet import UNet, unet2D_to_unet3D
-import carreno.nn.callbacks as cb
+from carreno.nn.unet import UNet
+from carreno.nn.weights import unet2D_to_unet3D
+from carreno.nn import callbacks as cb
 from carreno.nn.generators import volume_generator
 from carreno.nn.metrics import dice_score, bce_dice_loss
 from carreno.processing.patchify import volume_pred_from_vol
@@ -23,7 +24,7 @@ input_folder   = dataset_folder + "/input_p"
 target_folder  = dataset_folder + "/target_p"
 test_volume    = dataset_folder + "/input/slik3.tif"
 test_target    = dataset_folder + "/target/slik3.tif"
-model_path     = output_folder +  "/model/unet3D.h5"
+model_path     = output_folder +  "/model/unet3D_vgg16.h5"
 unet2d_model   = output_folder +  "/model/unet2D.h5"
 info_path      = output_folder +  "/" + Path(model_path).name.split('.')[0]
 nb_class = 3

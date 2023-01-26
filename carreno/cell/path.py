@@ -3,6 +3,9 @@ from scipy import ndimage as nd
 import numpy as np
 import os
 from pathlib import Path
+from skimage.segmentation import watershed
+from skimage.measure import regionprops
+
 from carreno.cell.body import associate_cytoneme
 from skimage.morphology import skeletonize_3d
 from carreno.processing.classify import categorical_multiclass
@@ -336,6 +339,9 @@ def extract_metric(pred, csv_output, distances=[1, 1, 1]):
     # label cytoneme
     cyto_lb = nd.label(cyto_sk,
                        structure=np.ones([3,3,3]))[0]
+    cyto_region = regionprops(watershed(cyto_lb,
+                                        markers=cyto_lb,
+                                        mask=cells_cyto))  # for later when calculating cyto/cell metric
 
     # label body
     cells_body = final_volume[..., 2]  # blue
@@ -353,6 +359,11 @@ def extract_metric(pred, csv_output, distances=[1, 1, 1]):
         coords = np.where(b)
         body_z_start = np.amin(coords[0])
         body_z_end = np.amax(coords[0])
+
+        # ratio of cytonemes to cell pixel
+        nb_cyto_px = sum(cyto_region[cyto].area for cyto in association[i])
+        nb_cell_px = b.sum()
+        ratio = nb_cyto_px / nb_cell_px
         
         # cytonemes metrics
         path, prob = skeletonized_cyto_paths(b, cyto_lb, association[i])
@@ -361,6 +372,7 @@ def extract_metric(pred, csv_output, distances=[1, 1, 1]):
         filtered_path, filtered_prob = clean_cyto_paths(path, prob)
 
         cells_info.append({'body_z': [body_z_start, body_z_end],
+                           'cyto_to_cell': ratio,
                            'path': filtered_path,
                            'odds': filtered_prob})
     
