@@ -10,7 +10,7 @@ from pathlib import Path
 from skimage.transform import resize
 
 from carreno.nn.unet import UNet
-from carreno.nn.weights import unet2D_to_unet3D
+from carreno.nn.layers import model2D_to_3D
 from carreno.nn import callbacks as cb
 from carreno.nn.generators import volume_generator
 from carreno.nn.metrics import dice_score, bce_dice_loss
@@ -25,10 +25,10 @@ target_folder  = dataset_folder + "/target_p"
 test_volume    = dataset_folder + "/input/slik3.tif"
 test_target    = dataset_folder + "/target/slik3.tif"
 model_path     = output_folder +  "/model/unet3D_vgg16.h5"
-unet2d_model   = output_folder +  "/model/unet2D.h5"
+unet2d_model   = output_folder +  "/model/unet2D_vgg16.h5"
 info_path      = output_folder +  "/" + Path(model_path).name.split('.')[0]
 nb_class = 3
-batch_size = 8
+batch_size = 5
 nb_epochs = 50
 input_shape = [64, 64, 64, 1]
 class_weights = "balanced"
@@ -140,12 +140,11 @@ def main():
     # get unet model
     model = None
     if unet2d_model is None:
-        model = UNet(input_shape, nb_class)
+        model = UNet(input_shape, nb_class, depth=5, n_feat=32)
     else:
         # transfer learning
         unet2D = tf.keras.models.load_model(unet2d_model, compile=False)
-        model = unet2D_to_unet3D(unet2D,
-                                 shape=input_shape)
+        model = model2D_to_3D(unet2D, input_shape[0])
 
     if test_architecture:
         model.summary()

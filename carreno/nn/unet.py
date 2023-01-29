@@ -2,6 +2,8 @@
 import tensorflow as tf
 import numpy as np
 
+import carreno.nn.layers
+
 
 def UNet(shape, n_class=3, depth=3, n_feat=32, backbone=None):
     """
@@ -26,13 +28,7 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, backbone=None):
     ndim = len(shape) - 1
     kernel_size_conv =     [3] * ndim  # kernel size for sampling operation is smaller on first axis since it's very short
     kernel_size_sampling = [2] * ndim
-    conv_layer_f =      tf.keras.layers.Conv2D
-    pool_layer_f =      tf.keras.layers.MaxPooling2D
-    transpose_layer_f = tf.keras.layers.Conv2DTranspose
-    if ndim == 3:
-        conv_layer_f =      tf.keras.layers.Conv3D
-        pool_layer_f =      tf.keras.layers.MaxPooling3D
-        transpose_layer_f = tf.keras.layers.Conv3DTranspose
+    layers = carreno.nn.layers.layers(ndim)
 
 
     def two_conv(input, n_feat=32):
@@ -49,18 +45,18 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, backbone=None):
         __ " tf.keras.engine.keras_tensor.KerasTensor
             last keras layer output
         """
-        conv1 = conv_layer_f(n_feat,
-                             kernel_size_conv,
-                             padding="same")(input)
-        norm1 = tf.keras.layers.BatchNormalization()(conv1)
-        acti1 = tf.keras.layers.LeakyReLU()(norm1)
-        conv2 = conv_layer_f(n_feat,
-                             kernel_size_conv,
-                             padding="same")(acti1)
-        norm2 = tf.keras.layers.BatchNormalization()(conv2)
-        acti2 = tf.keras.layers.LeakyReLU()(norm2)
+        conv1 = layers.ConvXD(n_feat,
+                              kernel_size_conv,
+                              padding="same")(input)
+        norm1 = layers.BatchNormalization()(conv1)
+        acti1 = layers.LeakyReLU()(norm1)
+        conv2 = layers.ConvXD(n_feat,
+                              kernel_size_conv,
+                              padding="same")(acti1)
+        norm2 = layers.BatchNormalization()(conv2)
+        acti2 = layers.LeakyReLU()(norm2)
         return acti2
-
+    
 
     def encoder_block(input, n_feat=32):
         """
@@ -79,7 +75,7 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, backbone=None):
             encoder block output
         """
         skip = two_conv(input, n_feat)
-        down_sample = pool_layer_f(kernel_size_sampling)(skip)
+        down_sample = layers.MaxPoolingXD(kernel_size_sampling)(skip)
         return skip, down_sample
 
 
@@ -103,15 +99,15 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, backbone=None):
         out : tf.keras.engine.keras_tensor.KerasTensor
             decoder block output
         """
-        upsample = transpose_layer_f(n_feat,
-                                     kernel_size_sampling,
-                                     kernel_size_sampling)(input)
-        skip_concatenate = tf.keras.layers.Concatenate()([upsample, skip])
+        upsample = layers.ConvXDTranspose(n_feat,
+                                          kernel_size_sampling,
+                                          kernel_size_sampling)(input)
+        skip_concatenate = layers.Concatenate()([upsample, skip])
         out = two_conv(skip_concatenate, n_feat)
         return out
 
     
-    input = tf.keras.layers.Input(shape)
+    input = layers.Input(shape)
     
     
     skip_layer = []
@@ -175,10 +171,10 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, backbone=None):
         else:
             raise Exception("Error : " + backbone + " is not supported!") 
 
-    output = conv_layer_f(filters=n_class,
-                          kernel_size=1,
-                          padding="same",
-                          activation="softmax")(current_layer)
+    output = layers.ConvXD(filters=n_class,
+                           kernel_size=1,
+                           padding="same",
+                           activation="softmax")(current_layer)
     
     model = tf.keras.Model(input, output)
 
@@ -189,4 +185,25 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, backbone=None):
             nw = np.expand_dims(w.mean(axis=2), axis=2)  # color channels avg
             model.layers[1].set_weights([nw, b])
 
+    model.depth = depth
+    model.backbone = backbone
+
     return model
+
+
+def add_backbone(unet, backbone, pretrained=True):
+    is_3d = unet.layers
+    current_layer = unet.layers[0]
+    skip_layers = []
+
+    if backbone == "vgg16":
+        if unet.depth != 5:
+            raise Exception("Error : UNet architecture incompatible, depth must be 5.")
+        
+        # encoder
+        current_layer = ...
+
+    # decoder
+    current_layer = ...
+
+    return tf.keras.Model(unet.layer[0], current_layer)
