@@ -28,7 +28,7 @@ model_path =     output_folder +  "/model/unet2D_vgg16.h5"
 info_path =      output_folder + "/" + Path(model_path).name.split('.')[0]
 nb_class = 3
 batch_size = 256
-nb_epochs = 50
+nb_epochs = 100
 input_shape = [64, 64, 1]
 class_weights = "balanced"  # None, "balanced"
 backbone = "vgg16"  # None, "vgg16"
@@ -37,7 +37,7 @@ backbone = "vgg16"  # None, "vgg16"
 test_split          = 1  # show if data split info
 test_generator      = 0  # show training gen output
 test_architecture   = 0  # show model summary
-test_prediction     = 0  # show a few prediction slices
+test_prediction     = 1  # show a few prediction slices
 
 def get_volumes_slices(paths):
     """

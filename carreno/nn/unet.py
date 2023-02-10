@@ -171,10 +171,19 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, backbone=None):
         else:
             raise Exception("Error : " + backbone + " is not supported!") 
 
-    output = layers.ConvXD(filters=n_class,
-                           kernel_size=1,
-                           padding="same",
-                           activation="softmax")(current_layer)
+    output = None
+    if n_class == 2:
+        # sigmoid activation
+        output = layers.ConvXD(filters=n_class,
+                               kernel_size=1,
+                               padding="same",
+                               activation="sigmoid")(current_layer)
+    else:
+        # multiclass activation
+        output = layers.ConvXD(filters=n_class,
+                               kernel_size=1,
+                               padding="same",
+                               activation="softmax")(current_layer)
     
     model = tf.keras.Model(input, output)
 
@@ -187,6 +196,17 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, backbone=None):
 
     model.depth = depth
     model.backbone = backbone
+    model.encoder_learning = True
+    
+    def switch_encoder_status(model):
+        if model.encoder_learning:
+            # freeze encoder TODO
+            model.encoder_learning = False
+        else:
+            # unfreeze encoder TODO
+            model.encoder_learning = True
+
+    model.switch_encoder_status = switch_encoder_status
 
     return model
 
