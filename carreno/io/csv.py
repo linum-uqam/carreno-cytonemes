@@ -13,6 +13,7 @@ def cells_info_csv(filename, cells_info, distances):
         Contains all the metric we want to save
         Expected map keys and values:
         - 'body_z' : [start_idx, end_idx]
+        - 'cyto_to_cell' : float
         - 'path' : [cytoneme_path]
         - 'odds': [path_probability]
     distances : list, ndarray
@@ -25,6 +26,7 @@ def cells_info_csv(filename, cells_info, distances):
         header = ['cell_id',
                   'body_z_start',
                   'body_z_end',
+                  'cyto_to_cell',
                   'path_id',
                   'x',
                   'y',
@@ -44,6 +46,7 @@ def cells_info_csv(filename, cells_info, distances):
                     data = [cell_id,
                             cells_info[cell_id]['body_z'][0],
                             cells_info[cell_id]['body_z'][1],
+                            cells_info[cell_id]['cyto_to_cell'],
                             path_id,
                             cells_info[cell_id]['path'][i][0][2],
                             cells_info[cell_id]['path'][i][0][1],

@@ -13,7 +13,9 @@ dataset_folder = data_folder + "/dataset"
 output_folder  = data_folder + "/output"
 filename       = dataset_folder + "/input/slik3.tif"  # path to an imagej tif volume with cell(s)
 model_path     = output_folder + "/model/unet3D.h5"
-csv_output     = output_folder + "/" + filename.split("/")[-1].split(".", 1)[0] + '_unet3D.csv'
+
+fname = lambda path : path.split("/")[-1].split(".", 1)[0]  # get filename without extension
+csv_output     = output_folder + "/" + fname(filename) + '_' + fname(model_path) + ".csv"
 
 
 def main():

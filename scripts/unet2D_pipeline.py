@@ -11,10 +11,11 @@ from carreno.processing.patchify import volume_pred_from_img
 data_folder = "data"  # folder where downloads and dataset will be put
 dataset_folder = data_folder + "/dataset"
 output_folder  = data_folder + "/output"
-model_path     = data_folder + "/model/test.h5"
 filename       = dataset_folder + "/input/slik3.tif"  # path to an imagej tif volume with cell(s)
-csv_output     = output_folder + "/" + filename.split("/")[-1].split(".", 1)[0] + '_unet2D.csv'
+model_path     = output_folder + "/model/unet2D_vgg16.h5"
 
+fname = lambda path : path.split("/")[-1].split(".", 1)[0]  # get filename without extension
+csv_output     = output_folder + "/" + fname(filename) + '_' + fname(model_path) + ".csv"
 
 def main():
     try:

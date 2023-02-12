@@ -10,7 +10,7 @@ from pathlib import Path
 from skimage.transform import resize
 
 import carreno.nn.callbacks as cb
-from carreno.nn.unet import UNet
+from carreno.nn.unet import UNet, encoder_trainable
 from carreno.nn.generators import volume_slice_generator
 from carreno.nn.metrics import dice_score, bce_dice_loss
 from carreno.processing.patchify import volume_pred_from_img
@@ -24,19 +24,20 @@ input_folder  =  dataset_folder + "/input_p"
 target_folder =  dataset_folder + "/target_p"
 test_volume =    dataset_folder + "/input/slik3.tif"
 test_target =    dataset_folder + "/target/slik3.tif"
-model_path =     output_folder +  "/model/unet2D.h5"
+model_path =     output_folder +  "/model/unet2D_vgg16.h5"
 info_path =      output_folder + "/" + Path(model_path).name.split('.')[0]
 nb_class = 3
 batch_size = 256
-nb_epochs = 50
+nb_epochs = 100
 input_shape = [64, 64, 1]
-class_weights = "balanced"
+class_weights = "balanced"  # None, "balanced"
+backbone = "vgg16"  # None, "vgg16"
 
 # visualization
 test_split          = 1  # show if data split info
 test_generator      = 0  # show training gen output
 test_architecture   = 0  # show model summary
-test_prediction     = 0  # show a few prediction slices
+test_prediction     = 1  # show a few prediction slices
 
 def get_volumes_slices(paths):
     """
@@ -167,7 +168,9 @@ def main():
         plt.show()
 
     # get unet model
-    model = UNet(input_shape, nb_class).model
+    model = UNet(input_shape, nb_class, depth=5, n_feat=64, backbone=backbone)
+    if backbone:
+        encoder_trainable(model, False)
 
     if test_architecture:
         model.summary()
@@ -195,6 +198,16 @@ def main():
                   loss=bce_dice_loss,
                   metrics=metrics,
                   sample_weight_mode="temporal")
+
+    if backbone:
+        # train the decoder a little before
+        model.fit(train_gen,
+                  validation_data=valid_gen,
+                  steps_per_epoch=len(train_gen),
+                  validation_steps=len(valid_gen),
+                  batch_size=batch_size,
+                  epochs=5)
+        encoder_trainable(model, True)
 
     # training
     history = model.fit(train_gen,

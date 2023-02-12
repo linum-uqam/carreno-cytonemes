@@ -46,8 +46,8 @@ def associate_cytoneme(body_label, cyto_label):
         labelled cytonemes
     Returns
     -------
-    association : list
-        list for each body containing a list of associated cytonemes
+    association : [[]]
+        list for each body containing a list of associated cytonemes. Axis 0 for body, axis 1 for associated cytonemes
     """
     # in case there is no cell body to match
     if not body_label.any():
@@ -65,7 +65,7 @@ def associate_cytoneme(body_label, cyto_label):
         association.append([])
 
     # fill association
-    for lb in range(1, cyto_label.max() + 1):
+    for lb in range(1, cyto_label.max()):
         cyto = cyto_label == lb
         cyto_dist = nd.distance_transform_edt(np.logical_not(cyto))
         cyto_dist[cyto_dist == 0] = hv
