@@ -10,7 +10,7 @@ from pathlib import Path
 from skimage.transform import resize
 
 import carreno.nn.callbacks as cb
-from carreno.nn.unet import UNet
+from carreno.nn.unet import UNet, encoder_trainable
 from carreno.nn.generators import volume_slice_generator
 from carreno.nn.metrics import dice_score, bce_dice_loss
 from carreno.processing.patchify import volume_pred_from_img
@@ -169,6 +169,8 @@ def main():
 
     # get unet model
     model = UNet(input_shape, nb_class, depth=5, n_feat=64, backbone=backbone)
+    if backbone:
+        encoder_trainable(model, False)
 
     if test_architecture:
         model.summary()
@@ -196,6 +198,16 @@ def main():
                   loss=bce_dice_loss,
                   metrics=metrics,
                   sample_weight_mode="temporal")
+
+    if backbone:
+        # train the decoder a little before
+        model.fit(train_gen,
+                  validation_data=valid_gen,
+                  steps_per_epoch=len(train_gen),
+                  validation_steps=len(valid_gen),
+                  batch_size=batch_size,
+                  epochs=5)
+        encoder_trainable(model, True)
 
     # training
     history = model.fit(train_gen,

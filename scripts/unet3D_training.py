@@ -9,7 +9,7 @@ from sklearn.model_selection import train_test_split
 from pathlib import Path
 from skimage.transform import resize
 
-from carreno.nn.unet import UNet
+from carreno.nn.unet import UNet, encoder_trainable
 from carreno.nn.layers import model2D_to_3D
 from carreno.nn import callbacks as cb
 from carreno.nn.generators import volume_generator
@@ -32,6 +32,7 @@ batch_size = 5
 nb_epochs = 100
 input_shape = [64, 64, 64, 1]
 class_weights = "balanced"
+backbone = None
 
 # visualization
 test_split          = 0  # show if data split info
@@ -172,6 +173,18 @@ def main():
                   loss=bce_dice_loss,
                   metrics=metrics,
                   sample_weight_mode="temporal")
+
+    if backbone:
+        encoder_trainable(model, False)
+        
+        # train the decoder a little before
+        model.fit(train_gen,
+                  validation_data=valid_gen,
+                  steps_per_epoch=len(train_gen),
+                  validation_steps=len(valid_gen),
+                  batch_size=batch_size,
+                  epochs=5)
+        encoder_trainable(model, True)
 
     # training
     history = model.fit(train_gen,
