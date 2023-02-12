@@ -33,6 +33,26 @@ def layers(ndim):
     return layers
 
 
+def set_trainable(model, start=0, end=-1, trainable=True):
+        """
+        Set range of layers as trainable or not.
+        Parameters
+        ----------
+        model : tf.Keras.Model
+            Model to set trainability
+        start : int
+            First selected layer (inclusive)
+        end : int
+            Last selected layer (exclusive)
+        trainable : bool
+            True to make layers within range trainable, False for untrainable
+        """
+        for i in range(start, end):
+            model.layers[i].trainable = trainable
+
+        return
+
+
 def weight2D_to_3D(weights, dim):
     """
     Adapts 2D weights to 3D
