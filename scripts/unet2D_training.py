@@ -168,7 +168,7 @@ def main():
         plt.show()
 
     # get unet model
-    model = UNet(input_shape, nb_class, depth=5, n_feat=32, backbone=backbone)
+    model = UNet(input_shape, nb_class, depth=5, n_feat=64, backbone=backbone)
 
     if test_architecture:
         model.summary()

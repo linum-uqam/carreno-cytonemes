@@ -33,26 +33,6 @@ def layers(ndim):
     return layers
 
 
-def set_trainable(model, start=0, end=-1, trainable=True):
-        """
-        Set range of layers as trainable or not.
-        Parameters
-        ----------
-        model : tf.Keras.Model
-            Model to set trainability
-        start : int
-            First selected layer (inclusive)
-        end : int
-            Last selected layer (exclusive)
-        trainable : bool
-            True to make layers within range trainable, False for untrainable
-        """
-        for i in range(start, end):
-            model.layers[i].trainable = trainable
-
-        return
-
-
 def weight2D_to_3D(weights, dim):
     """
     Adapts 2D weights to 3D
@@ -120,6 +100,26 @@ def get_layer_parent_i(layer, model):
     return parent_i
 
 
+def __convert_conv_param_for_dim(param, dim):
+    """
+    Convert 2D convolutional layer param to requested dim
+    Parameters
+    ----------
+    param : array-like
+        tuple of 2 or 3 elements
+    dim : int
+        number of axis, 2 or 3
+    Returns
+    -------
+    result : array-like
+        tuple of 2 or 3 elements
+    """
+    result = list(param[:2])  # avoids color channel
+    if dim == 3:
+        result = [result[0]] + result  # add third axis
+    return result
+
+
 def model2D_to_3D(model, inp_ndim=64):
     """
     Convert a model 2D layers to 3D while conserving weights and bias.
@@ -151,12 +151,12 @@ def model2D_to_3D(model, inp_ndim=64):
         if isinstance(l, layers2D.ConvXDTranspose):  # need to check if instance is ConvXDTranspose before ConvXD
             conv_weights_transfer.append(i)
             conv_trans_layer = layers3D.ConvXDTranspose(filters=l.filters,
-                                                        kernel_size=[l.kernel_size[0], *l.kernel_size],  # add uniform new dim
-                                                        strides=[l.strides[0], *l.strides],
+                                                        kernel_size=__convert_conv_param_for_dim(l.kernel_size, 3),  # add uniform new dim
+                                                        strides=__convert_conv_param_for_dim(l.strides, 3),
                                                         padding=l.padding,
                                                         output_padding=l.output_padding,
                                                         data_format=l.data_format,
-                                                        dilation_rate=[l.dilation_rate[0], *l.dilation_rate],
+                                                        dilation_rate=__convert_conv_param_for_dim(l.dilation_rate, 3),
                                                         groups=l.groups,
                                                         activation=l.activation,
                                                         use_bias=l.use_bias,
@@ -171,11 +171,11 @@ def model2D_to_3D(model, inp_ndim=64):
         elif isinstance(l, layers2D.ConvXD):
             conv_weights_transfer.append(i)
             conv_layer = layers3D.ConvXD(filters=l.filters,
-                                         kernel_size=[l.kernel_size[0], *l.kernel_size],  # add uniform new dim
-                                         strides=[l.strides[0], *l.strides],
+                                         kernel_size=__convert_conv_param_for_dim(l.kernel_size, 3),  # add uniform new dim
+                                         strides=__convert_conv_param_for_dim(l.strides, 3),
                                          padding=l.padding,
                                          data_format=l.data_format,
-                                         dilation_rate=[l.dilation_rate[0], *l.dilation_rate],
+                                         dilation_rate=__convert_conv_param_for_dim(l.dilation_rate, 3),
                                          groups=l.groups,
                                          activation=l.activation,
                                          use_bias=l.use_bias,
@@ -188,8 +188,8 @@ def model2D_to_3D(model, inp_ndim=64):
                                          bias_constraint=l.bias_constraint)
             x.append(conv_layer(x[-1]))
         elif isinstance(l, layers2D.MaxPoolingXD):
-            max_pool_layer = layers3D.MaxPoolingXD(pool_size=[l.pool_size[0], *l.pool_size],
-                                                   strides=[l.strides[0], *l.strides],
+            max_pool_layer = layers3D.MaxPoolingXD(pool_size=__convert_conv_param_for_dim(l.pool_size, 3),
+                                                   strides=__convert_conv_param_for_dim(l.strides, 3),
                                                    padding=l.padding,
                                                    data_format=l.data_format)
             x.append(max_pool_layer(x[-1]))
