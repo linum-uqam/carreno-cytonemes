@@ -94,3 +94,20 @@ def is_3D(shape):
     """
     # check if grayscale, rgb or rgba
     return len(shape) == 3 or (len(shape) == 4 and (shape[3] == 3 or shape[3] == 4))
+
+
+def gaussian_filter(sigma=1.0, mu=0.0):
+    # https://stackoverflow.com/questions/14873203/plotting-of-1-dimensional-gaussian-distribution-function
+
+    from matplotlib import pyplot as mp
+    import numpy as np
+
+    def gaussian(x, mu, sig):
+        return np.exp(-np.power(x - mu, 2.) / (2 * np.power(sig, 2.)))
+
+    x_values = np.linspace(-3, 3, 120)
+    for mu, sig in [(-1, 1), (0, 2), (2, 3)]:
+        mp.plot(x_values, gaussian(x_values, mu, sig))
+
+    mp.show()
+    return ...
