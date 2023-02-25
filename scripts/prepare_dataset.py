@@ -9,7 +9,7 @@ import scipy
 
 from carreno.io.fetcher import fetch_folder, folders_id
 from carreno.utils.util import normalize
-from carreno.processing.patchify import patchify
+from carreno.processing.patches import patchify, reshape_patchify
 
 download =                  0  # False if the folders are already downloaded
 uncompress_raw =            1  # uncompress archives in raw data, error if uncompressed files are missing with options uncompress_raw and hand_drawn_cyto
@@ -31,7 +31,7 @@ input_patch_folder =       output + "/" + dataset_name + "/input_p"
 target_patch_folder =      output + "/" + dataset_name + "/target_p"
 soft_target_patch_folder = output + "/" + dataset_name + "/soft_target_p"
 unlabelled_patch_folder =  output + "/" + dataset_name + "/unlabelled_p"
-patch_shape = [64, 64, 64]
+patch_shape = [48, 96, 96]
 stride = None
 blur = 1.5
 
@@ -244,8 +244,9 @@ def prepare_patches(volume_path, patch_folder, patch_shape, stride=None, mode=1)
 
     for i in range(len(files)):
         inc = 0
-        v = tif.imread(volume_path + "/" + files[i])     
-        p, __ = patchify(v, patch_shape, mode, stride)
+        v = tif.imread(volume_path + "/" + files[i])
+        p = patchify(v, patch_shape=patch_shape, stride=stride, resize_mode=mode)
+        p, __ = reshape_patchify(p, len(patch_shape))
 
         for j in range(len(p)):
             """ I'll stop filtering since I didn't test unbalance impact (and subjective)
@@ -258,7 +259,7 @@ def prepare_patches(volume_path, patch_folder, patch_shape, stride=None, mode=1)
             p_path.append(patch_folder + "/" + name + "_" + str(inc) + '.tif')  # patches save path
             tif.imwrite(p_path[-1], p[j])
             inc += 1
-                
+            
     return p_path
 
 

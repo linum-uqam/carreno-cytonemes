@@ -14,7 +14,7 @@ from carreno.nn.layers import model2D_to_3D
 from carreno.nn import callbacks as cb
 from carreno.nn.generators import volume_generator
 from carreno.nn.metrics import dice_score, bce_dice_loss
-from carreno.processing.patchify import volume_pred_from_vol
+from carreno.processing.patches import volume_pred_from_vol
 
 # validate dataset is present
 data_folder = "data"  # folder where downloads and dataset will be put

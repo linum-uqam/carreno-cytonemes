@@ -13,7 +13,7 @@ import carreno.nn.callbacks as cb
 from carreno.nn.unet import UNet, encoder_trainable
 from carreno.nn.generators import volume_slice_generator
 from carreno.nn.metrics import dice_score, bce_dice_loss
-from carreno.processing.patchify import volume_pred_from_img
+from carreno.processing.patches import volume_pred_from_img
 
 
 # validate dataset is present
@@ -169,9 +169,7 @@ def main():
 
     # get unet model
     model = UNet(input_shape, nb_class, depth=5, n_feat=64, backbone=backbone)
-    if backbone:
-        encoder_trainable(model, False)
-
+    
     if test_architecture:
         model.summary()
 
@@ -200,6 +198,8 @@ def main():
                   sample_weight_mode="temporal")
 
     if backbone:
+        encoder_trainable(model, False)
+        
         # train the decoder a little before
         model.fit(train_gen,
                   validation_data=valid_gen,
