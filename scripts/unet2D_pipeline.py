@@ -6,7 +6,7 @@ from skimage.transform import resize
 
 from carreno.cell.path import extract_metric
 from carreno.io.tifffile import metadata
-from carreno.processing.patchify import volume_pred_from_img
+from carreno.processing.patches import volume_pred_from_img
 
 data_folder = "data"  # folder where downloads and dataset will be put
 dataset_folder = data_folder + "/dataset"

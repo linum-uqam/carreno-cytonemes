@@ -12,5 +12,6 @@ bm3d
 matplotlib
 tensorflow==2.7.0
 cuda-python
+patchify
 albumentations
 volumentations-3D

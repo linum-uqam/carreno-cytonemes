@@ -28,6 +28,7 @@ def reshape_patchify(x, n_axis=3):
     y = x.reshape([np.prod(order)] + list(x.shape[-n_axis:]))
     return y, order
 
+
 def patchify(x, patch_shape, stride=None, resize_mode=2, pad_mode='constant', constant_values=0):
     """Divide ndarray in patches. x will be resized to best fit patch shape.
     Parameters
@@ -133,7 +134,7 @@ def unpatchify_w_nearest(patches, order, patch_shape, stride=None):
     
     # add color channels if not grayscale
     if len(order) < len(patch_shape):
-        nd_shape.append(patch_shape[-1])
+        nd_shape = nd_shape + patch_shape[len(order):]
             
     nd = np.zeros(nd_shape)
     
@@ -193,17 +194,19 @@ def unpatchify_w_weight(patches, order, patch_shape, stride=None, weight=None):
     for i in range(len(order)):
         ax_length = patch_shape[i] + (order[i] - 1) * stride[i]
         nd_shape.append(ax_length)
-    
+        
     # add color channels if not grayscale
     if len(order) < len(patch_shape):
-        nd_shape + list(patch_shape[len(order):])
+        nd_shape = nd_shape + patch_shape[len(order):]
     
     nd = np.zeros(nd_shape, dtype=float)
     nd_weight = nd.copy()
     
-    for x1 in range(0, max(1, nd_shape[0] - stride[0]), stride[0]):
+    for x in range(order[0]):
+        x1 = x * stride[0]
         x2 = x1 + patch_shape[0]
-        for y1 in range(0, max(1, nd_shape[1] - stride[1]), stride[1]):
+        for y in range(order[1]):
+            y1 = y * stride[1]
             y2 = y1 + patch_shape[1]
 
             if tw_dim:
@@ -213,7 +216,8 @@ def unpatchify_w_weight(patches, order, patch_shape, stride=None, weight=None):
                 nd_weight[x1:x2,
                           y1:y2] += weight
             else:
-                for z1 in range(0, max(1, nd_shape[2] - stride[2]), stride[2]):
+                for z in range(order[2]):
+                    z1 = z * stride[2]
                     z2 = z1 + patch_shape[2]
                     
                     weighted_patch = next(patches) * weight
@@ -252,8 +256,8 @@ def __pred_iterator(model, xs, is_img=True):
         pred_patch = model.predict(np.array([x]))
 
         # rm batch axis
-        # for img, batch axis will be interpreted as z axis of 1
         if not is_img:
+            # for img, batch axis will be interpreted as z axis of 1
             pred_patch = np.squeeze(pred_patch, axis=0)
         
         yield pred_patch
@@ -275,30 +279,35 @@ def volume_pred_from_img(model, x, stride, weight=None):
         predicted volume
     """
     # get input shape
-    patch_shape = [1] + list(model.get_config()["layers"][0]["config"]["batch_input_shape"][1:-1])
+    #patch_shape = [1] + list(model.get_config()["layers"][0]["config"]["batch_input_shape"][1:-1])  # weird flex but okay
+    input_patch_shape = [1] + list(model.layers[0].input.shape[1:-1])
     
     # patchify to fit inside model input
-    patch = patchify(x, patch_shape=patch_shape, stride=stride, mode=0)
-    patch, order = reshape_patchify(patch, len(patch_shape))
-
+    patch = patchify(x, patch_shape=input_patch_shape, stride=stride, resize_mode=0)
+    patch, order = reshape_patchify(patch, len(input_patch_shape))
+    
     # remove z axis (we want an image) and add color channel
     preprocess = np.expand_dims(np.squeeze(np.array(patch), axis=1), axis=-1)
-
+    
     # to avoid memory issues, use an iterator for prediction
     iterator = __pred_iterator(model, preprocess, True)
 
+    # get output shape
+    output_patch_shape = [1] + list(model.layers[-1].output.shape[1:])
+    output_stride = list(stride) + [output_patch_shape[-1]]
+    
     # reassemble patches into a volume
     pred_volume = None
     if weight is None:
         pred_volume = unpatchify_w_nearest(iterator,
-                                           patch_shape=patch_shape,
+                                           patch_shape=output_patch_shape,
                                            order=order,
-                                           stride=stride)
+                                           stride=output_stride)
     else:
         pred_volume = unpatchify_w_weight(iterator,
-                                          patch_shape=patch_shape,
+                                          patch_shape=output_patch_shape,
                                           order=order,
-                                          stride=stride,
+                                          stride=output_stride,
                                           weight=weight)
 
     return pred_volume
@@ -320,29 +329,34 @@ def volume_pred_from_vol(model, x, stride, weight=None):
         predicted volume
     """
     # get input shape
-    patch_shape = list(model.get_config()["layers"][0]["config"]["batch_input_shape"][1:-1])
+    input_patch_shape = list(model.layers[0].input.shape[1:-1])
 
     # patchify to fit inside model input
-    patch, order = patchify(x, patch_shape=patch_shape, mode=2, stride=stride)
-    
+    patch = patchify(x, patch_shape=input_patch_shape, resize_mode=0, stride=stride)
+    patch, order = reshape_patchify(patch, len(input_patch_shape))
+
     # add color channel
     preprocess = np.expand_dims(np.array(patch), axis=-1)
-
+    
     # to avoid memory issues, use an iterator for prediction
     iterator = __pred_iterator(model, preprocess, False)
+    
+    # get output shape
+    output_patch_shape = model.layers[-1].output.shape[1:]
+    output_stride = list(stride) + output_patch_shape[len(stride):]
 
     # reassemble patches into a volume
     pred_volume = None
     if weight is None:
         pred_volume = unpatchify_w_nearest(iterator,
-                                           patch_shape=patch_shape,
+                                           patch_shape=output_patch_shape,
                                            order=order,
-                                           stride=stride)
+                                           stride=output_stride)
     else:
         pred_volume = unpatchify_w_weight(iterator,
-                                          patch_shape=patch_shape,
+                                          patch_shape=output_patch_shape,
                                           order=order,
-                                          stride=stride,
+                                          stride=output_stride,
                                           weight=weight)
     
     return pred_volume
