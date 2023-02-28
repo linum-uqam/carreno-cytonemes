@@ -3,9 +3,11 @@ import numpy as np
 import tensorflow as tf
 import carreno.nn.unet
 
+verbose = 0
+
 def main():
     def test_train_n_pred(name, shape, n_class, depth, n_feat, backbone):
-        print(name, ":")
+        print(name, ":") if verbose else ...
 
         # generate data
         n = np.prod(np.array(shape[:-1]))
@@ -19,39 +21,39 @@ def main():
         #print(x.shape, y.shape)
 
         # create architecture
-        print(" - {:.<9}... ".format("assemble "), end="")
+        print(" - {:.<9}... ".format("assemble "), end="") if verbose else ...
         model = carreno.nn.unet.UNet(shape=shape,
                                      n_class=n_class,
                                      depth=depth,
                                      n_feat=n_feat,
                                      backbone=backbone,
                                      pretrained=False)
-        print("done")
+        print("done") if verbose else ...
 
         # show architecture once assembled
         #model.summary()
 
         # compile model
-        print(" - {:.<9}... ".format("compile "), end="")
+        print(" - {:.<9}... ".format("compile "), end="") if verbose else ...
         model.compile(optimizer=tf.keras.optimizers.Adam(0.001),
                       loss=tf.keras.losses.CategoricalCrossentropy())
-        print("done")
+        print("done") if verbose else ...
 
         # train model
-        print(" - {:.<9}... ".format("train "), end="")
+        print(" - {:.<9}... ".format("train "), end="") if verbose else ...
         xs = x[np.newaxis, :]  # otherwise x is iterated over axis 0 in batch
         ys = y[np.newaxis, :]  # ^ same for y
         history = model.fit(x=xs,
                             y=ys,
                             batch_size=1,
-                            epochs=10,
+                            epochs=3,
                             verbose=0)
-        print("done")
+        print("done") if verbose else ...
 
         # model prediction
-        print(" - {:.<9}... ".format("predict "), end="")
+        print(" - {:.<9}... ".format("predict "), end="") if verbose else ...
         model.predict(np.stack([x]*3), verbose=0)
-        print("done")
+        print("done") if verbose else ...
 
         return
 
@@ -74,8 +76,9 @@ def main():
         test_train_n_pred(**tests[i])
         if i == len(tests)-1:
             continue
-        print(sep)
+        print(sep) if verbose else ...
 
 
 if __name__ == "__main__":
+    verbose = 1
     main()

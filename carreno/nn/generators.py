@@ -3,10 +3,20 @@ import tensorflow as tf
 import tifffile as tif
 import numpy as np
 from sklearn.utils import shuffle
+from carreno.utils.util import is_2D, is_3D
 
 def balanced_class_weights(labels):
-    """
-    TODO make another script for sample weight creation?
+    """ TODO make another script for sample weight creation?
+    Give balanced weights for labels following this formula :
+    (1 / class_instance) * (total_instance / nb_classes)
+    Parameters
+    ----------
+    labels : [path]
+        list of tiff volume paths
+    Returns
+    -------
+    weights : [float]
+        weight for each classes
     """
     # assume y is categorical (1 channel per class)
     weights = []
@@ -18,8 +28,8 @@ def balanced_class_weights(labels):
             big_pile += tif.imread(mask)
 
         nb_classes = big_pile.shape[-1]
+        total = big_pile.sum()
         for i in range(nb_classes):
-            total = big_pile.sum()
             class_instance = big_pile[..., i].sum()
             w_result = (1 / class_instance) * (total / nb_classes)
             weights.append(w_result)
@@ -27,8 +37,62 @@ def balanced_class_weights(labels):
     return weights
 
 
+def get_volumes_slices(paths):
+    """
+    Get all slice index for all the volumes in list of paths
+    Parameters
+    ----------
+    paths : [str]
+        Paths to volumes to slice up
+    Returns
+    -------
+    slices : [[str, int]]
+        list of list containing volume names and slice indexes
+    """
+    slices = []
+
+    for path in paths:
+        with tif.TiffFile(path) as tif_file:
+            # Wrong photometric in tiff format may cause issue when using pages
+            #print('nb of pages', len(tif_file.pages))
+            for i in range(len(tif_file.pages)):
+                slices.append([path, i])
+    
+    return slices
+
+
+def __augmentation(aug, x, y, w=None, noise=None):
+    #https://medium.com/pytorch/multi-target-in-albumentations-16a777e9006e
+    x_aug = None
+    y_aug = None
+    
+    data = {'image' : x,
+            'mask'  : y}
+    if not w is None:
+        data['weight'] = w
+
+    if not aug is None:
+        data = aug(**data)
+
+    y_aug = data['mask']
+    w_aug = data['weight']
+
+    if noise is None:
+        x_aug = data['image']
+    else:
+        noisy_data = {'image': data['image']}
+        noisy_data = noise(**noisy_data)
+        x_aug = noisy_data['image']
+    
+    # model architecture requires a color channel axis
+    if (is_2D(x.shape) and x_aug.ndim < 3) or (is_3D(x.shape) and x_aug.shape.ndim < 4):
+        x_aug = np.expand_dims(x_aug, axis=-1)
+
+    return x_aug, y_aug, w_aug
+
+
 class volume_slice_generator(tf.keras.utils.Sequence):
-    def __init__(self, vol, label, size=1, augmentation=None, shuffle=True, weight=None):
+    def __init__(self, vol, label, size=1, augmentation=None, noise=None, shuffle=True, weight=None):
         """
         Data generator for 2D model training
         Parameters
@@ -37,21 +101,23 @@ class volume_slice_generator(tf.keras.utils.Sequence):
             path to volume followed by volume slice index
         label : [[str, int]]
             path to volume followed by volume slice index
-        augmentation : albumentations.Compose
-            composition of transformations
         size : int
             batch size
+        augmentation : albumentations.Compose
+            composition of transformations applied to both X and Y
+        noise : albumentations.Compose
+            composition of transformations applied only to X
         shuffle : bool
             whether we should shuffle after each epoch
         weight : str, None
             apply sample weight for unbalanced dataset
             -"balanced" : (1/instances) * (total/nb_classes)
-
         """
         self.x = vol
         self.y = label
         self.size = size
         self.aug = augmentation
+        self.noise = noise
         self.shuffle = shuffle
         if not weight is None:
             self.w = balanced_class_weights(list(set([path for path, slc in self.y])))
@@ -66,31 +132,34 @@ class volume_slice_generator(tf.keras.utils.Sequence):
         data_i = idx * self.size
         
         # instead of reading entire volume, reads only 1 slice using TiffFile
-        x_info = tif.TiffFile(self.x[data_i][0])
-        y_info = tif.TiffFile(self.y[data_i][0])
+        with tif.TiffFile(self.x[data_i][0]) as x_info:
+            x_batch = np.zeros((self.size, * x_info.pages[0].shape))
+        with tif.TiffFile(self.y[data_i][0]) as y_info:
+            y_batch = np.zeros((self.size, * y_info.pages[0].shape))
 
-        x_batch = np.zeros((self.size, * x_info.pages[0].shape))
-        y_batch = np.zeros((self.size, * y_info.pages[0].shape))
-
-        
         # fill batches
         for i in range(self.size):
             x_path, slc = self.x[data_i]
             y_path, __  = self.y[data_i]
-            x_info = tif.TiffFile(x_path)
-            y_info = tif.TiffFile(y_path)
-            data = {
-                'image': x_info.pages[slc].asarray(),
-                'mask' : y_info.pages[slc].asarray()
-            }
+            
+            data = {}
+            with tif.TiffFile(x_path) as x_info:
+                data['image'] = x_info.pages[slc].asarray()
+            with tif.TiffFile(y_path) as y_info:
+                data['mask'] = y_info.pages[slc].asarray()
             
             if not self.aug is None:
                 data = self.aug(**data)
             
-            x_batch[i] = data['image']
             y_batch[i] = data['mask']
 
-            
+            if self.noise is None:
+                x_batch[i] = data['image']
+            else:
+                noisy_data = {'image': data['image']}
+                noisy_data = self.noise(**noisy_data)
+                x_batch[i] = noisy_data['image']
+
             data_i += 1
         
         # model architecture requires a color channel axis
@@ -172,7 +241,7 @@ class volume_generator(tf.keras.utils.Sequence):
                 'image': x_info,
                 'mask' : y_info
             }
-            
+
             if not self.aug is None:
                 data = self.aug(**data)
             
