@@ -61,34 +61,36 @@ def get_volumes_slices(paths):
     return slices
 
 
-def __augmentation(aug, x, y, w=None, noise=None):
+def augmentation(aug, x, y, w=None, noise=None):
     #https://medium.com/pytorch/multi-target-in-albumentations-16a777e9006e
     x_aug = None
     y_aug = None
-    
+    w_param = not w is None
+
     data = {'image' : x,
             'mask'  : y}
-    if not w is None:
+    if w_param:
         data['weight'] = w
 
     if not aug is None:
         data = aug(**data)
 
     y_aug = data['mask']
-    w_aug = data['weight']
+    w_aug = None
+    if w_param:
+        w_aug = data['weight']
 
     if noise is None:
         x_aug = data['image']
     else:
+        # add noise to input
         noisy_data = {'image': data['image']}
         noisy_data = noise(**noisy_data)
         x_aug = noisy_data['image']
-    
-    # model architecture requires a color channel axis
-    if (is_2D(x.shape) and x_aug.ndim < 3) or (is_3D(x.shape) and x_aug.shape.ndim < 4):
-        x_aug = np.expand_dims(x_aug, axis=-1)
 
-    return x_aug, y_aug, w_aug
+    batch = [x_aug, y_aug] if not w_param else [x_aug, y_aug, w_aug]
+
+    return batch
 
 
 class volume_slice_generator(tf.keras.utils.Sequence):
@@ -104,9 +106,9 @@ class volume_slice_generator(tf.keras.utils.Sequence):
         size : int
             batch size
         augmentation : albumentations.Compose
-            composition of transformations applied to both X and Y
+            composition of transformations applied to both inputs and labels
         noise : albumentations.Compose
-            composition of transformations applied only to X
+            composition of transformations applied only to inputs
         shuffle : bool
             whether we should shuffle after each epoch
         weight : str, None
@@ -119,10 +121,16 @@ class volume_slice_generator(tf.keras.utils.Sequence):
         self.aug = augmentation
         self.noise = noise
         self.shuffle = shuffle
-        if not weight is None:
-            self.w = balanced_class_weights(list(set([path for path, slc in self.y])))
+        self.w = None if weight is None else balanced_class_weights(list(set([path for path, slc in self.y])))
+        self.x_shape = []
+        self.y_shape = []
         if len(self.x) > 0:
-            self.__missing_color_ch = len(tif.imread(self.x[0][0]).shape) < 4
+            # instead of reading entire volume, reads only 1 slice using TiffFile
+            with tif.TiffFile(self.x[0][0]) as x_info:
+                self.x_shape = (x_info.pages[0].shape)
+            with tif.TiffFile(self.y[0][0]) as y_info:
+                self.y_shape = (y_info.pages[0].shape)
+            self.__missing_color_ch = len(self.x_shape) < 3
     
     def __len__(self):
         # number of batch (some img might not be included in the epoch)
@@ -132,42 +140,35 @@ class volume_slice_generator(tf.keras.utils.Sequence):
         data_i = idx * self.size
         
         # instead of reading entire volume, reads only 1 slice using TiffFile
-        with tif.TiffFile(self.x[data_i][0]) as x_info:
-            x_batch = np.zeros((self.size, * x_info.pages[0].shape))
-        with tif.TiffFile(self.y[data_i][0]) as y_info:
-            y_batch = np.zeros((self.size, * y_info.pages[0].shape))
+        x_batch = np.zeros((self.size, *self.x_shape))
+        y_batch = np.zeros((self.size, *self.y_shape))
+        w_batch = None
+        if not self.w is None:
+            w_batch = x_batch.copy()
 
         # fill batches
         for i in range(self.size):
             x_path, slc = self.x[data_i]
             y_path, __  = self.y[data_i]
-            
-            data = {}
-            with tif.TiffFile(x_path) as x_info:
-                data['image'] = x_info.pages[slc].asarray()
-            with tif.TiffFile(y_path) as y_info:
-                data['mask'] = y_info.pages[slc].asarray()
-            
-            if not self.aug is None:
-                data = self.aug(**data)
-            
-            y_batch[i] = data['mask']
 
-            if self.noise is None:
-                x_batch[i] = data['image']
-            else:
-                noisy_data = {'image': data['image']}
-                noisy_data = self.noise(**noisy_data)
-                x_batch[i] = noisy_data['image']
-
+            with tif.TiffFile(x_path) as x_info, tif.TiffFile(y_path) as y_info:
+                data = augmentation(aug=self.aug,
+                                    x=x_info.pages[slc].asarray(),
+                                    y=y_info.pages[slc].asarray(),
+                                    w=self.w,
+                                    noise=self.noise)
+                x_batch[i], y_batch[i] = data[:2]
+                if not self.w is None:
+                    w_batch[i] = data[2]
+            
             data_i += 1
-        
-        # model architecture requires a color channel axis
+
         if self.__missing_color_ch:
-            x_batch = np.expand_dims(x_batch, axis=3)
-        
+            # add color channel
+            x_batch = np.expand_dims(x_batch, axis=-1)
+
         batch = [x_batch, y_batch]
-        if hasattr(self, "w"):
+        if not self.w is None:
             # weight ndarray doesn't need the color channel axis
             sample_weights = np.zeros(y_batch.shape[:-1])
             
@@ -186,7 +187,7 @@ class volume_slice_generator(tf.keras.utils.Sequence):
 
 
 class volume_generator(tf.keras.utils.Sequence):
-    def __init__(self, vol, label, size=1, augmentation=None, shuffle=True, weight=None):
+    def __init__(self, vol, label, size=1, augmentation=None, noise=None, shuffle=True, weight=None):
         """
         Data generator for 3D model training
         Parameters
@@ -195,10 +196,12 @@ class volume_generator(tf.keras.utils.Sequence):
             path to input volume
         label : [str]
             path to label volume
-        augmentation : volumentations.Compose
-            composition of transformations
         size : int
             batch size
+        augmentation : volumentations.Compose
+            composition of transformations applied to both inputs and labels
+        noise : volumentations.Compose
+            composition of transformations applied only to inputs
         shuffle : bool
             whether we should shuffle after each epoch
         weight : str, None
@@ -209,18 +212,18 @@ class volume_generator(tf.keras.utils.Sequence):
         self.y = label
         self.size = size
         self.aug = augmentation
+        self.noise = noise
         self.shuffle = shuffle
+        self.w = None if weight is None else balanced_class_weights(self.y)
         self.x_shape = []
         self.y_shape = []
-        if not weight is None:
-            self.w = balanced_class_weights(self.y)
         if len(self.x) > 0:
             # instead of reading entire volume, reads only 1 slice using TiffFile
-            x_info = tif.TiffFile(self.x[0])
-            y_info = tif.TiffFile(self.y[0])
-            self.x_shape = tuple([len(x_info.pages)] + list(x_info.pages[0].shape))
-            self.y_shape = tuple([len(y_info.pages)] + list(y_info.pages[0].shape))
-            self.__missing_color_ch = len(self.x_shape) < 5
+            with tif.TiffFile(self.x[0]) as x_info:
+                self.x_shape = tuple([len(x_info.pages)] + list(x_info.pages[0].shape))
+            with tif.TiffFile(self.y[0]) as y_info:
+                self.y_shape = tuple([len(y_info.pages)] + list(y_info.pages[0].shape))
+            self.__missing_color_ch = len(self.x_shape) < 4
     
     def __len__(self):
         # number of batch (some img might not be included in the epoch)
@@ -230,32 +233,33 @@ class volume_generator(tf.keras.utils.Sequence):
         data_i = idx * self.size
         x_batch = np.zeros((self.size, *self.x_shape))
         y_batch = np.zeros((self.size, *self.y_shape))
-        
+        w_batch = None
+        if not self.w is None:
+            w_batch = x_batch.copy()
+
         # fill batches
         for i in range(self.size):
             x_path = self.x[data_i]
             y_path = self.y[data_i]
-            x_info = tif.imread(x_path)
-            y_info = tif.imread(y_path)
-            data = {
-                'image': x_info,
-                'mask' : y_info
-            }
 
-            if not self.aug is None:
-                data = self.aug(**data)
+            data = augmentation(aug=self.aug,
+                                x=tif.imread(x_path), # files are closed after reading into ndarray
+                                y=tif.imread(y_path),
+                                w=self.w,
+                                noise=self.noise)
             
-            x_batch[i] = data['image']
-            y_batch[i] = data['mask']
+            x_batch[i], y_batch[i] = data[:2]
+            if not self.w is None:
+                w_batch[i] = data[2]
             
             data_i += 1
         
         # model architecture requires a color channel axis
         if self.__missing_color_ch:
-            x_batch = np.expand_dims(x_batch, axis=4)
+            x_batch = np.expand_dims(x_batch, axis=-1)
         
         batch = [x_batch, y_batch]
-        if hasattr(self, "w"):
+        if not self.w is None:
             # weight ndarray doesn't need the color channel axis
             sample_weights = np.zeros(y_batch.shape[:-1])
             
