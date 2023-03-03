@@ -5,37 +5,6 @@ import numpy as np
 from sklearn.utils import shuffle
 from carreno.utils.util import is_2D, is_3D
 
-def balanced_class_weights(labels):
-    """ TODO make another script for sample weight creation?
-    Give balanced weights for labels following this formula :
-    (1 / class_instance) * (total_instance / nb_classes)
-    Parameters
-    ----------
-    labels : [path]
-        list of tiff volume paths
-    Returns
-    -------
-    weights : [float]
-        weight for each classes
-    """
-    # assume y is categorical (1 channel per class)
-    weights = []
-        
-    list_of_volumes = labels
-    if len(list_of_volumes) > 0:
-        big_pile = tif.imread(list_of_volumes[0])
-        for mask in list_of_volumes[1:]:
-            big_pile += tif.imread(mask)
-
-        nb_classes = big_pile.shape[-1]
-        total = big_pile.sum()
-        for i in range(nb_classes):
-            class_instance = big_pile[..., i].sum()
-            w_result = (1 / class_instance) * (total / nb_classes)
-            weights.append(w_result)
-            
-    return weights
-
 
 def get_volumes_slices(paths):
     """
@@ -61,10 +30,10 @@ def get_volumes_slices(paths):
     return slices
 
 
-def augmentation(aug, x, y, w=None, noise=None):
-    #https://medium.com/pytorch/multi-target-in-albumentations-16a777e9006e
+def augment(aug, x, y, w=None, noise=None): 
     x_aug = None
     y_aug = None
+    w_aug = None
     w_param = not w is None
 
     data = {'image' : x,
@@ -76,7 +45,6 @@ def augmentation(aug, x, y, w=None, noise=None):
         data = aug(**data)
 
     y_aug = data['mask']
-    w_aug = None
     if w_param:
         w_aug = data['weight']
 
@@ -94,7 +62,7 @@ def augmentation(aug, x, y, w=None, noise=None):
 
 
 class volume_slice_generator(tf.keras.utils.Sequence):
-    def __init__(self, vol, label, size=1, augmentation=None, noise=None, shuffle=True, weight=None):
+    def __init__(self, vol, label, weight=None, size=1, augmentation=None, noise=None, shuffle=True):
         """
         Data generator for 2D model training
         Parameters
@@ -102,6 +70,8 @@ class volume_slice_generator(tf.keras.utils.Sequence):
         img : [[str, int]]
             path to volume followed by volume slice index
         label : [[str, int]]
+            path to volume followed by volume slice index
+        weight : [[str, int]]
             path to volume followed by volume slice index
         size : int
             batch size
@@ -111,17 +81,14 @@ class volume_slice_generator(tf.keras.utils.Sequence):
             composition of transformations applied only to inputs
         shuffle : bool
             whether we should shuffle after each epoch
-        weight : str, None
-            apply sample weight for unbalanced dataset
-            -"balanced" : (1/instances) * (total/nb_classes)
         """
         self.x = vol
         self.y = label
+        self.w = weight
         self.size = size
         self.aug = augmentation
         self.noise = noise
         self.shuffle = shuffle
-        self.w = None if weight is None else balanced_class_weights(list(set([path for path, slc in self.y])))
         self.x_shape = []
         self.y_shape = []
         if len(self.x) > 0:
@@ -149,17 +116,32 @@ class volume_slice_generator(tf.keras.utils.Sequence):
         # fill batches
         for i in range(self.size):
             x_path, slc = self.x[data_i]
-            y_path, __  = self.y[data_i]
+            x_info = tif.TiffFile(x_path)
+            x = x_info.pages[slc].asarray()  # load only 1 slice
+            x_info.close()  # close opened file
 
-            with tif.TiffFile(x_path) as x_info, tif.TiffFile(y_path) as y_info:
-                data = augmentation(aug=self.aug,
-                                    x=x_info.pages[slc].asarray(),
-                                    y=y_info.pages[slc].asarray(),
-                                    w=self.w,
-                                    noise=self.noise)
-                x_batch[i], y_batch[i] = data[:2]
-                if not self.w is None:
-                    w_batch[i] = data[2]
+            y_path, __  = self.y[data_i]
+            y_info = tif.TiffFile(y_path)
+            y = y_info.pages[slc].asarray()
+            y_info.close()
+            
+            w = None
+            if not w_batch is None:
+                w_path, __  = self.w[data_i]
+                w_info = tif.TiffFile(w_path)
+                w = w_info.pages[slc].asarray()
+                w_info.close()
+                
+            data = augment(aug=self.aug,
+                                x=x,
+                                y=y,
+                                w=w,
+                                noise=self.noise)
+            
+            # fill batch w augmentation
+            x_batch[i], y_batch[i] = data[:2]
+            if not self.w is None:
+                w_batch[i] = data[2]
             
             data_i += 1
 
@@ -167,17 +149,7 @@ class volume_slice_generator(tf.keras.utils.Sequence):
             # add color channel
             x_batch = np.expand_dims(x_batch, axis=-1)
 
-        batch = [x_batch, y_batch]
-        if not self.w is None:
-            # weight ndarray doesn't need the color channel axis
-            sample_weights = np.zeros(y_batch.shape[:-1])
-            
-            for i in range(y_batch.shape[-1]):
-                sample_weights[y_batch[..., i] == True] = self.w[i]
-            
-            batch.append(sample_weights)
-
-        self.batch = batch  # lets us get the latest batch in callbacks
+        batch = [x_batch, y_batch] if self.w is None else [x_batch, y_batch, w_batch]
 
         return batch
         
@@ -196,6 +168,8 @@ class volume_generator(tf.keras.utils.Sequence):
             path to input volume
         label : [str]
             path to label volume
+        weight : [[str, int]]
+            path to volume followed by volume slice index
         size : int
             batch size
         augmentation : volumentations.Compose
@@ -204,17 +178,14 @@ class volume_generator(tf.keras.utils.Sequence):
             composition of transformations applied only to inputs
         shuffle : bool
             whether we should shuffle after each epoch
-        weight : str, None
-            apply sample weight for unbalanced dataset
-            -"balanced" : (1/instances) * (total/nb_classes)
         """
         self.x = vol
         self.y = label
+        self.w = weight
         self.size = size
         self.aug = augmentation
         self.noise = noise
         self.shuffle = shuffle
-        self.w = None if weight is None else balanced_class_weights(self.y)
         self.x_shape = []
         self.y_shape = []
         if len(self.x) > 0:
@@ -239,15 +210,17 @@ class volume_generator(tf.keras.utils.Sequence):
 
         # fill batches
         for i in range(self.size):
-            x_path = self.x[data_i]
-            y_path = self.y[data_i]
+            x = tif.imread(self.x[data_i])  # files are closed after reading into ndarray
+            y = tif.imread(self.y[data_i])
+            w = None if self.w is None else tif.imread(self.w[data_i])
 
-            data = augmentation(aug=self.aug,
-                                x=tif.imread(x_path), # files are closed after reading into ndarray
-                                y=tif.imread(y_path),
-                                w=self.w,
+            data = augment(aug=self.aug,
+                                x=x,
+                                y=y,
+                                w=w,
                                 noise=self.noise)
             
+            # fill batch w augmentation
             x_batch[i], y_batch[i] = data[:2]
             if not self.w is None:
                 w_batch[i] = data[2]
@@ -258,18 +231,8 @@ class volume_generator(tf.keras.utils.Sequence):
         if self.__missing_color_ch:
             x_batch = np.expand_dims(x_batch, axis=-1)
         
-        batch = [x_batch, y_batch]
-        if not self.w is None:
-            # weight ndarray doesn't need the color channel axis
-            sample_weights = np.zeros(y_batch.shape[:-1])
-            
-            for i in range(y_batch.shape[-1]):
-                sample_weights[y_batch[..., i] == True] = self.w[i]
-            
-            batch.append(sample_weights)
-
-        self.batch = batch  # lets us get the latest batch in callbacks
-
+        batch = [x_batch, y_batch] if self.w is None else [x_batch, y_batch, w_batch]
+        
         return batch
     
     def on_epoch_end(self):

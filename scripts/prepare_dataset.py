@@ -10,14 +10,16 @@ import scipy
 from carreno.io.fetcher import fetch_folder, folders_id
 from carreno.utils.util import normalize
 from carreno.processing.patches import patchify, reshape_patchify
+from carreno.processing.weights import balanced_class_weights
 
 download =                  0  # False if the folders are already downloaded
-uncompress_raw =            1  # uncompress archives in raw data, error if uncompressed files are missing with options uncompress_raw and hand_drawn_cyto
-create_labelled_dataset =   1  # organise uncompressed labelled data
-create_unlabelled_dataset = 1  # organise uncompressed unlabelled data
-create_patches =            1  # seperate volume into patches
-hand_drawn_cyto_dataset =   1  # save hand drawn cytonemes (2D) in data
-cleanup_uncompressed =      1  # cleanup extracted files in raw folder
+uncompress_raw =            0  # uncompress archives in raw data, error if uncompressed files are missing with options uncompress_raw and hand_drawn_cyto
+create_labelled_dataset =   0  # organise uncompressed labelled data
+create_unlabelled_dataset = 0  # organise uncompressed unlabelled data
+create_patches =            0  # seperate volume into patches
+create_sample_weights =     1  # make weight distributions for labelled data patches
+hand_drawn_cyto_dataset =   0  # save hand drawn cytonemes (2D) in data
+cleanup_uncompressed =      0  # cleanup extracted files in raw folder
 
 output =                   "data"  # folder where downloads and dataset will be put, must not exist for download
 dataset_name =             "dataset"
@@ -29,6 +31,7 @@ unlabelled_folder =        output + "/" + dataset_name + "/unlabelled"
 drawing_folder =           output + "/drawn_cyto"
 input_patch_folder =       output + "/" + dataset_name + "/input_p"
 target_patch_folder =      output + "/" + dataset_name + "/target_p"
+weight_patch_folder =      output + "/" + dataset_name + "/weight_p"
 soft_target_patch_folder = output + "/" + dataset_name + "/soft_target_p"
 unlabelled_patch_folder =  output + "/" + dataset_name + "/unlabelled_p"
 patch_shape = [48, 96, 96]
@@ -75,6 +78,7 @@ bodies = [
     raw_path + '/Slik-6 deconvoluted-annotation-cell_body.tif'
 ]
 
+# Expected format :
 # data = [[cyto_path, volume_name, surname]]
 data = [
     ["Ctrl GFP _Sample_1",  "Ctrl GFP _Sample_1.tif",  "gfp1-1"],
@@ -159,12 +163,11 @@ def create_dataset_input_folder(folder, volumes):
         v = tif.imread(volumes[i][0])
 
         """ Changed input from int to float for image reconstruction
-        # X inputs are 8 bits integer grayscale volumes
-        # Basile told me volumes are meant to be 8 bits and other format could create artifacts
+        # Basile said X inputs are meant to be 8 bits integer grayscale volumes
         x = normalize(v, 0, 255).astype(np.uint8)
         """
         x = normalize(v, 0, 1).astype(np.float32)
-        tif.imwrite(folder + '/' + volumes[i][1] + '.tif', x)
+        tif.imwrite(folder + '/' + volumes[i][1] + '.tif', x, photometric='minisblack')
         
 
 def create_dataset_target_folder(folder, volumes, cytonemes, bodies, blur=None):
@@ -190,26 +193,30 @@ def create_dataset_target_folder(folder, volumes, cytonemes, bodies, blur=None):
         os.makedirs(folder)
 
     for i in range(len(volumes)):
-        c = tif.imread(cytonemes[i])
-        b = tif.imread(bodies[i])
+        c = normalize(tif.imread(cytonemes[i]), 0, 1)
+        b = normalize(tif.imread(bodies[i]), 0, 1)
 
         # Y targets are binary categorical volumes
         # saves memory compared to sparse categorical even though we need more than 1 channel since values are binary
-        y = np.zeros([*(b.shape), 3], dtype=bool)
+        """
+        For TiffFile, putting rgb photometric with bool dtype creates really weird artifacts.
+        While it could have been nice to have `y` dtype as bool, that's just not an option for Tiff format.
+        Plus bool dtype wouldn't work with SoftSeg (Soft ground-truth)
+        """
+        y = np.zeros([*(b.shape), 3], dtype=np.float32)
         y[..., 0] = np.logical_not(np.logical_or(c, b))
         y[..., 1] = c
         y[..., 2] = b
 
         # Soft ground-truth https://arxiv.org/ftp/arxiv/papers/2011/2011.09041.pdf
         if not blur is None:
-            y = y.astype(np.float32)
             for axis in range(y.shape[-1]):
                 y[..., axis] = scipy.ndimage.gaussian_filter(y[..., axis], sigma=blur)
         
             # make sure everything is well distributed
             scipy.special.softmax(y, axis=-1)
 
-        tif.imwrite(folder + '/' + volumes[i][1] + '.tif', y)
+        tif.imwrite(folder + '/' + volumes[i][1] + '.tif', y, photometric='rgb')
 
 
 def prepare_patches(volume_path, patch_folder, patch_shape, stride=None, mode=1):
@@ -261,6 +268,45 @@ def prepare_patches(volume_path, patch_folder, patch_shape, stride=None, mode=1)
             inc += 1
             
     return p_path
+
+
+def create_sample_weight_folder(folder, target_folder):
+    """
+    Create W folder using Y folder
+    Parameters
+    ----------
+    folder : str, Path
+        Path where to create/override the weighted patches folder
+    target_folder : str, Path
+        Path where annotation patches are
+    Returns
+    -------
+    None
+    """
+    # remove patches folders if they already exist
+    if os.path.isdir(folder):
+        rmtree(folder)
+    
+    # create folder
+    pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
+
+    filenames = []
+    for f in os.listdir(target_folder):
+        filenames.append(f)
+    
+    for f in filenames:
+        # find classes instances
+        instances = [0] * 3
+        y = tif.imread(os.path.join(target_folder, f))
+        for i in range(len(instances)):
+            instances[i] += y[..., i].sum()
+        
+        # get classes weights
+        weights = balanced_class_weights(instances)
+
+        # save weighted volume
+        w_vol = np.sum(y * weights, axis=-1)
+        tif.imwrite(os.path.join(folder, f), w_vol, photometric="minisblack")
 
 
 def hand_drawn_cyto(drawing_path):
@@ -339,6 +385,7 @@ def main():
         if blur:
             create_dataset_target_folder(soft_target_folder, volumes, cytonemes, bodies, blur=blur)
         print("done")
+    
 
     if create_unlabelled_dataset:
         # this will override input and target folders so be careful
@@ -359,6 +406,12 @@ def main():
             prepare_patches(unlabelled_folder, unlabelled_folder, patch_shape, stride=stride, mode=2)
         print("done")
     
+    if create_sample_weights and os.path.exists(target_patch_folder):
+        # this will override weight folder so be careful
+        print("Creating sample weights for patches ...", end=" ")
+        create_sample_weight_folder(weight_patch_folder, target_patch_folder)
+        print("done")
+
     # Copy hand drawn annotations
     if hand_drawn_cyto_dataset:
         print("Copying hand drawn annotations ...", end=" ")
