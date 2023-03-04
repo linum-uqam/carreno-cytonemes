@@ -62,7 +62,7 @@ def augment(aug, x, y, w=None, noise=None):
 
 
 class volume_slice_generator(tf.keras.utils.Sequence):
-    def __init__(self, vol, label, weight=None, size=1, augmentation=None, noise=None, shuffle=True):
+    def __init__(self, vol, label, weight=None, size=1, augmentation=None, noise=None, shuffle=True, nb_color_ch=1):
         """
         Data generator for 2D model training
         Parameters
@@ -81,6 +81,8 @@ class volume_slice_generator(tf.keras.utils.Sequence):
             composition of transformations applied only to inputs
         shuffle : bool
             whether we should shuffle after each epoch
+        nb_color_ch : int
+            number of color channels if there isn't any (mainly for grayscale)
         """
         self.x = vol
         self.y = label
@@ -91,6 +93,7 @@ class volume_slice_generator(tf.keras.utils.Sequence):
         self.shuffle = shuffle
         self.x_shape = []
         self.y_shape = []
+        self.nb_color_ch = nb_color_ch
         if len(self.x) > 0:
             # instead of reading entire volume, reads only 1 slice using TiffFile
             with tif.TiffFile(self.x[0][0]) as x_info:
@@ -133,10 +136,10 @@ class volume_slice_generator(tf.keras.utils.Sequence):
                 w_info.close()
                 
             data = augment(aug=self.aug,
-                                x=x,
-                                y=y,
-                                w=w,
-                                noise=self.noise)
+                           x=x,
+                           y=y,
+                           w=w,
+                           noise=self.noise)
             
             # fill batch w augmentation
             x_batch[i], y_batch[i] = data[:2]
@@ -147,7 +150,7 @@ class volume_slice_generator(tf.keras.utils.Sequence):
 
         if self.__missing_color_ch:
             # add color channel
-            x_batch = np.expand_dims(x_batch, axis=-1)
+            x_batch = np.stack([x_batch] * self.nb_color_ch, axis=-1)
 
         batch = [x_batch, y_batch] if self.w is None else [x_batch, y_batch, w_batch]
 
@@ -159,7 +162,7 @@ class volume_slice_generator(tf.keras.utils.Sequence):
 
 
 class volume_generator(tf.keras.utils.Sequence):
-    def __init__(self, vol, label, size=1, augmentation=None, noise=None, shuffle=True, weight=None):
+    def __init__(self, vol, label, size=1, augmentation=None, noise=None, shuffle=True, weight=None, nb_color_ch=1):
         """
         Data generator for 3D model training
         Parameters
@@ -178,6 +181,8 @@ class volume_generator(tf.keras.utils.Sequence):
             composition of transformations applied only to inputs
         shuffle : bool
             whether we should shuffle after each epoch
+        nb_color_ch : int
+            number of color channels if there isn't any (mainly for grayscale)
         """
         self.x = vol
         self.y = label
@@ -188,6 +193,7 @@ class volume_generator(tf.keras.utils.Sequence):
         self.shuffle = shuffle
         self.x_shape = []
         self.y_shape = []
+        self.nb_color_ch = nb_color_ch
         if len(self.x) > 0:
             # instead of reading entire volume, reads only 1 slice using TiffFile
             with tif.TiffFile(self.x[0]) as x_info:
@@ -229,7 +235,7 @@ class volume_generator(tf.keras.utils.Sequence):
         
         # model architecture requires a color channel axis
         if self.__missing_color_ch:
-            x_batch = np.expand_dims(x_batch, axis=-1)
+            x_batch = np.stack([x_batch] * self.nb_color_ch, axis=-1)
         
         batch = [x_batch, y_batch] if self.w is None else [x_batch, y_batch, w_batch]
         

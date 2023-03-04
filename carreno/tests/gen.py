@@ -68,7 +68,7 @@ def test_gen(gen, n_input, x=None, y=None, w=None, size=1):
 
 def main():
     # tmp dataset to test on
-    print("{:.<36}... ".format("Generating tmp dataset "), end="") if verbose else ...
+    print("{:.<31}... ".format("Generating tmp dataset "), end="") if verbose else ...
     
     y, z, x = np.meshgrid(range(6), range(3), range(6))
 
@@ -104,7 +104,7 @@ def main():
         print("2D gen :") if verbose else ...
 
         # volume slicing into images
-        print(" - {:.<33}... ".format("volume slicing "), end="") if verbose else ...
+        print(" - {:.<28}... ".format("volume slicing "), end="") if verbose else ...
         input_paths_w_slices  = carreno.nn.generators.get_volumes_slices(input_paths)
         label_paths_w_slices  = carreno.nn.generators.get_volumes_slices(label_paths)
         weight_paths_w_slices = carreno.nn.generators.get_volumes_slices(weight_paths)
@@ -116,7 +116,7 @@ def main():
         size = 1
 
         # img generator without augmentations
-        print(" - {:.<33}... ".format("init gen w/ aug "), end="") if verbose else ...
+        print(" - {:.<28}... ".format("gen w/ aug "), end="") if verbose else ...
         img_gen = carreno.nn.generators.volume_slice_generator(input_paths_w_slices,
                                                                label_paths_w_slices,
                                                                size=size,
@@ -127,9 +127,22 @@ def main():
         
         test_gen(img_gen, len(input_paths_w_slices), expected_x[0], expected_y[0], w=None, size=1)
         print("done") if verbose else ...
+
+        # img generator without augmentations and rgb input
+        print(" - {:.<28}... ".format("gen w/ aug and rgb input"), end="") if verbose else ...
+        img_gen = carreno.nn.generators.volume_slice_generator(input_paths_w_slices,
+                                                               label_paths_w_slices,
+                                                               size=size,
+                                                               augmentation=None,
+                                                               noise=None,
+                                                               shuffle=False,
+                                                               weight=None,
+                                                               nb_color_ch=3)
+        test_gen(img_gen, len(input_paths_w_slices), np.concatenate([expected_x[0]]*3, axis=-1), expected_y[0], w=None, size=1)
+        print("done") if verbose else ...
         
         # img generator with augmentations
-        print(" - {:.<33}... ".format("init gen w aug "), end="") if verbose else ...
+        print(" - {:.<28}... ".format("gen w aug "), end="") if verbose else ...
         flip2D = A.Compose([A.HorizontalFlip(p=1)], additional_targets={'weight':'mask'}, p=1)
         img_gen = carreno.nn.generators.volume_slice_generator(input_paths_w_slices,
                                                                label_paths_w_slices,
@@ -142,7 +155,7 @@ def main():
         print("done") if verbose else ...
 
         # img generator with weights
-        print(" - {:.<33}... ".format("init gen w weights "), end="") if verbose else ...
+        print(" - {:.<28}... ".format("gen w weights "), end="") if verbose else ...
         img_gen = carreno.nn.generators.volume_slice_generator(input_paths_w_slices,
                                                                label_paths_w_slices,
                                                                weight=weight_paths_w_slices,
@@ -153,7 +166,7 @@ def main():
         test_gen(img_gen, len(input_paths_w_slices), expected_x[0], expected_y[0], w=expected_w[0], size=1)
         print("done") if verbose else ...
         
-        print(" - {:.<33}... ".format("init gen w aug n weights "), end="") if verbose else ...
+        print(" - {:.<28}... ".format("gen w aug n weights "), end="") if verbose else ...
         img_gen = carreno.nn.generators.volume_slice_generator(input_paths_w_slices,
                                                                label_paths_w_slices,
                                                                weight=weight_paths_w_slices,
@@ -165,7 +178,7 @@ def main():
         print("done") if verbose else ...
 
         # img generator with noise
-        print(" - {:.<33}... ".format("init gen w noise "), end="") if verbose else ...
+        print(" - {:.<28}... ".format("gen w noise "), end="") if verbose else ...
         grid_drop2D = A.Compose([A.GridDropout(0.5, holes_number_x=2, holes_number_y=2, p=1)], p=1)
         img_gen = carreno.nn.generators.volume_slice_generator(input_paths_w_slices,
                                                                label_paths_w_slices,
@@ -178,7 +191,7 @@ def main():
         print("done") if verbose else ...
 
         # img generator with everything
-        print(" - {:.<33}... ".format("init gen w aug, weight and noise "), end="") if verbose else ...
+        print(" - {:.<28}... ".format("gen w aug, weight and noise "), end="") if verbose else ...
         grid_drop2D = A.Compose([A.GridDropout(0.5, holes_number_x=2, holes_number_y=2, p=1)], p=1)
         img_gen = carreno.nn.generators.volume_slice_generator(input_paths_w_slices,
                                                                label_paths_w_slices,
@@ -221,7 +234,7 @@ def main():
         print("3D gen :") if verbose else ...
 
         # volume generator without augmentations
-        print(" - {:.<33}... ".format("init gen w/ aug "), end="") if verbose else ...
+        print(" - {:.<28}... ".format("gen w/ aug "), end="") if verbose else ...
         vol_gen = carreno.nn.generators.volume_generator(input_paths,
                                                          label_paths,
                                                          size=size,
@@ -232,8 +245,21 @@ def main():
         test_gen(vol_gen, len(input_paths), expected_x, expected_y, w=None, size=1)
         print("done") if verbose else ...
         
+        # img generator without augmentations and rgb input
+        print(" - {:.<28}... ".format("gen w/ aug and rgb input"), end="") if verbose else ...
+        vol_gen = carreno.nn.generators.volume_generator(input_paths,
+                                                         label_paths,
+                                                         size=size,
+                                                         augmentation=None,
+                                                         noise=None,
+                                                         shuffle=False,
+                                                         weight=None,
+                                                         nb_color_ch=3)
+        test_gen(vol_gen, len(input_paths), np.concatenate([expected_x]*3, axis=-1), expected_y, w=None, size=1)
+        print("done") if verbose else ...
+
         # volume generator with augmentations
-        print(" - {:.<33}... ".format("init gen w aug "), end="") if verbose else ...
+        print(" - {:.<28}... ".format("gen w aug "), end="") if verbose else ...
         flip3D = V.Compose([V.Flip(axis=2, always_apply=True, p=1)], targets=[['image'], ['mask', 'weight']], p=1)
         vol_gen = carreno.nn.generators.volume_generator(input_paths,
                                                          label_paths,
@@ -246,7 +272,7 @@ def main():
         print("done") if verbose else ...
 
         # weights 3D
-        print(" - {:.<33}... ".format("init gen w weights "), end="") if verbose else ...
+        print(" - {:.<28}... ".format("gen w weights "), end="") if verbose else ...
         vol_gen = carreno.nn.generators.volume_generator(input_paths,
                                                          label_paths,
                                                          weight=weight_paths,
@@ -257,7 +283,7 @@ def main():
         test_gen(vol_gen, len(input_paths), expected_x, expected_y, w=expected_w, size=1)
         print("done") if verbose else ...
         
-        print(" - {:.<33}... ".format("init gen w aug n weights "), end="") if verbose else ...
+        print(" - {:.<28}... ".format("gen w aug n weights "), end="") if verbose else ...
         vol_gen = carreno.nn.generators.volume_generator(input_paths,
                                                          label_paths,
                                                          weight=weight_paths,
@@ -269,7 +295,7 @@ def main():
         print("done") if verbose else ...
 
         # noise 3D
-        print(" - {:.<33}... ".format("init gen w noise "), end="") if verbose else ...
+        print(" - {:.<28}... ".format("gen w noise "), end="") if verbose else ...
         grid_drop2D = V.Compose([V.GridDropout(0.5, holes_number_x=3, holes_number_y=1, holes_number_z=3, p=1)], p=1)
         vol_gen = carreno.nn.generators.volume_generator(input_paths,
                                                          label_paths,
@@ -282,7 +308,7 @@ def main():
         print("done") if verbose else ...
 
         # with everything
-        print(" - {:.<33}... ".format("init gen w aug, weight and noise "), end="") if verbose else ...
+        print(" - {:.<28}... ".format("gen w aug, weight and noise "), end="") if verbose else ...
         grid_drop2D = V.Compose([V.GridDropout(0.5, holes_number_x=2, holes_number_y=1, holes_number_z=2, p=1)], p=1)
         vol_gen = carreno.nn.generators.volume_generator(input_paths,
                                                          label_paths,
