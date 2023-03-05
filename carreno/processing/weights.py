@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 
+
 def balanced_class_weights(instances):
     """
-    Give balanced weights for labels following this formula :
-    (1 / class_instances) * (total_instances / nb_classes)
+    Give balanced weights for labels following the same formula as
+    `sklearn.utils.class_weight.compute_class_weight`:
+    (total_instances / nb_classes) * (1 / class_instances)
     unless class_instances is 0, then the weight is 0 and it isn't included in nb_classes
     Parameters
     ----------

@@ -9,17 +9,17 @@ import scipy
 
 from carreno.io.fetcher import fetch_folder, folders_id
 from carreno.utils.util import normalize
-from carreno.processing.patches import patchify, reshape_patchify
 from carreno.processing.weights import balanced_class_weights
+from carreno.processing.patches import patchify, reshape_patchify
 
-download =                  0  # False if the folders are already downloaded
-uncompress_raw =            0  # uncompress archives in raw data, error if uncompressed files are missing with options uncompress_raw and hand_drawn_cyto
-create_labelled_dataset =   0  # organise uncompressed labelled data
-create_unlabelled_dataset = 0  # organise uncompressed unlabelled data
-create_patches =            0  # seperate volume into patches
-create_sample_weights =     1  # make weight distributions for labelled data patches
-hand_drawn_cyto_dataset =   0  # save hand drawn cytonemes (2D) in data
-cleanup_uncompressed =      0  # cleanup extracted files in raw folder
+download =                  1  # False if the folders are already downloaded
+uncompress_raw =            1  # uncompress archives in raw data, error if uncompressed files are missing with options uncompress_raw and hand_drawn_cyto
+create_labelled_dataset =   1  # organise uncompressed labelled data
+create_sample_weights =     1  # make weight distributions for labelled data patches (during `create_labelled_dataset`)
+create_unlabeled_dataset =  1  # organise uncompressed unlabeled data
+create_patches =            1  # seperate volume into patches
+hand_drawn_cyto_dataset =   1  # save hand drawn cytonemes (2D) in data
+cleanup_uncompressed =      1  # cleanup extracted files in raw folder
 
 output =                   "data"  # folder where downloads and dataset will be put, must not exist for download
 dataset_name =             "dataset"
@@ -27,17 +27,21 @@ raw_path =                 output + '/raw'
 input_folder   =           output + "/" + dataset_name + "/input"
 target_folder  =           output + "/" + dataset_name + "/target"
 soft_target_folder =       output + "/" + dataset_name + "/soft_target"
-unlabelled_folder =        output + "/" + dataset_name + "/unlabelled"
+weight_folder =            output + "/" + dataset_name + "/weight"
+soft_weight_folder =       output + "/" + dataset_name + "/soft_weight"
+unlabeled_folder =         output + "/" + dataset_name + "/unlabeled"
 drawing_folder =           output + "/drawn_cyto"
 input_patch_folder =       output + "/" + dataset_name + "/input_p"
 target_patch_folder =      output + "/" + dataset_name + "/target_p"
 weight_patch_folder =      output + "/" + dataset_name + "/weight_p"
+soft_weight_patch_folder = output + "/" + dataset_name + "/soft_weight_p"
 soft_target_patch_folder = output + "/" + dataset_name + "/soft_target_p"
-unlabelled_patch_folder =  output + "/" + dataset_name + "/unlabelled_p"
+unlabeled_patch_folder =   output + "/" + dataset_name + "/unlabeled_p"
 patch_shape = [48, 96, 96]
 stride = None
 blur = 1.5
 
+# list of labeled volumes
 # volumes = [[path_to_volume, volume_name]]
 volumes = [
     [raw_path + '/Nouvelle annotation cellules/GFP #01.tif', 'ctrl1'],
@@ -52,6 +56,7 @@ volumes = [
     [raw_path + '/Slik 6.tif', 'slik6']
 ]
 
+# list of labeled cytonemes
 cytonemes = [
     raw_path + '/Nouvelle annotation cellules/Mask cytoneme Ctrl GFP#1.tif',
     raw_path + '/Nouvelle annotation cellules/Mask cytoneme Ctrl GFP #02.tif',
@@ -65,6 +70,7 @@ cytonemes = [
     raw_path + '/Re annotation/Slik-6 deconvoluted-annotation-cytonemes.tif'
 ]
 
+# list of labeled cell bodies
 bodies = [
     raw_path + '/Nouvelle annotation cellules/Mask cell body Ctrl GFP#1.tif',
     raw_path + '/Nouvelle annotation cellules/Mask cell body Ctrl GFP #02.tif',
@@ -78,6 +84,13 @@ bodies = [
     raw_path + '/Slik-6 deconvoluted-annotation-cell_body.tif'
 ]
 
+# list of unlabeled volumes
+unlabeled_volumes = []
+for (dir, dirnames, filenames) in os.walk(raw_path + '/Non annotated Data'):
+    for f in filenames:
+        unlabeled_volumes.append(os.path.join(dir, f))
+
+# list of hand drawn cytonemes in 2D for pipeline validation
 # Expected format :
 # data = [[cyto_path, volume_name, surname]]
 data = [
@@ -150,8 +163,8 @@ def create_dataset_input_folder(folder, volumes):
     ----------
     folder : str, Path
         Path where to create/override the input folder
-    volumes : [Path]
-        Path to tiff volumes
+    volumes : [Path, str]
+        Path to tiff volumes with associated name
     Returns
     -------
     None
@@ -161,7 +174,6 @@ def create_dataset_input_folder(folder, volumes):
 
     for i in range(len(volumes)):
         v = tif.imread(volumes[i][0])
-
         """ Changed input from int to float for image reconstruction
         # Basile said X inputs are meant to be 8 bits integer grayscale volumes
         x = normalize(v, 0, 255).astype(np.uint8)
@@ -276,9 +288,9 @@ def create_sample_weight_folder(folder, target_folder):
     Parameters
     ----------
     folder : str, Path
-        Path where to create/override the weighted patches folder
+        Path where to create/override the weighted volumes folder
     target_folder : str, Path
-        Path where annotation patches are
+        Path where annotation volumes are
     Returns
     -------
     None
@@ -294,16 +306,17 @@ def create_sample_weight_folder(folder, target_folder):
     for f in os.listdir(target_folder):
         filenames.append(f)
     
+    instances = [0] * 3
     for f in filenames:
         # find classes instances
-        instances = [0] * 3
         y = tif.imread(os.path.join(target_folder, f))
         for i in range(len(instances)):
             instances[i] += y[..., i].sum()
         
-        # get classes weights
-        weights = balanced_class_weights(instances)
+    # get classes weights
+    weights = balanced_class_weights(instances)
 
+    for f in filenames:
         # save weighted volume
         w_vol = np.sum(y * weights, axis=-1)
         tif.imwrite(os.path.join(folder, f), w_vol, photometric="minisblack")
@@ -382,34 +395,35 @@ def main():
         print("Creating labelled dataset from raw data ...", end=" ")
         create_dataset_input_folder(input_folder, volumes)
         create_dataset_target_folder(target_folder, volumes, cytonemes, bodies)
+        create_sample_weight_folder(weight_folder, target_folder) if create_sample_weights else ...
         if blur:
             create_dataset_target_folder(soft_target_folder, volumes, cytonemes, bodies, blur=blur)
+            create_sample_weight_folder(soft_weight_folder, soft_target_folder) if create_sample_weights else ...
         print("done")
     
 
-    if create_unlabelled_dataset:
+    if create_unlabeled_dataset:
         # this will override input and target folders so be careful
-        print("Creating unlabelled dataset from raw data ...", end=" ")
-        create_dataset_input_folder(unlabelled_folder, [])
+        print("Creating unlabeled dataset from raw data ...", end=" ")
+        filenames = [os.path.splitext(os.path.basename(fn))[0] for fn in unlabeled_volumes]  # get filenames w/ extensions
+        create_dataset_input_folder(unlabeled_folder, list(zip(unlabeled_volumes, filenames)))
         print("done")
 
     # Create patches
     if create_patches:
-        print("Volume division ...", end=" ")
+        print("Creating patches ...", end=" ")
         if os.path.exists(input_folder):
             prepare_patches(input_folder, input_patch_folder, patch_shape, stride=stride, mode=2)
         if os.path.exists(target_folder):
             prepare_patches(target_folder, target_patch_folder, patch_shape+[3], stride=stride, mode=1)
         if os.path.exists(soft_target_folder):
             prepare_patches(soft_target_folder, soft_target_patch_folder, patch_shape+[3], stride=stride, mode=1)
-        if os.path.exists(unlabelled_folder):
-            prepare_patches(unlabelled_folder, unlabelled_folder, patch_shape, stride=stride, mode=2)
-        print("done")
-    
-    if create_sample_weights and os.path.exists(target_patch_folder):
-        # this will override weight folder so be careful
-        print("Creating sample weights for patches ...", end=" ")
-        create_sample_weight_folder(weight_patch_folder, target_patch_folder)
+        if os.path.exists(weight_folder):
+            prepare_patches(weight_folder, weight_patch_folder, patch_shape, stride=stride, mode=1)
+        if os.path.exists(soft_weight_folder):
+            prepare_patches(soft_weight_folder, soft_weight_patch_folder, patch_shape, stride=stride, mode=1)
+        if os.path.exists(unlabeled_folder):
+            prepare_patches(unlabeled_folder, unlabeled_patch_folder, patch_shape, stride=stride, mode=2)
         print("done")
 
     # Copy hand drawn annotations
