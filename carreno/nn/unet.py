@@ -34,7 +34,7 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, backbone=None, pretrained=True):
     n_class : int
         Number of unique labels
     depth : int
-        UNet number of levels (nb of encoder block + 1)
+        UNet number of levels (nb of encoder block or pooling layers)
     n_feat : int
         Number of features for the first encoder block (will increase and decrease according to UNet architecture)
     Returns
@@ -68,14 +68,14 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, backbone=None, pretrained=True):
         conv1 = layers.ConvXD(n_feat,
                               kernel_size_conv,
                               padding="same")(input)
-        norm1 = layers.BatchNormalization()(conv1)
-        acti1 = layers.LeakyReLU()(norm1)
+        acti1 = layers.LeakyReLU()(conv1)
+        norm1 = layers.BatchNormalization()(acti1)
         conv2 = layers.ConvXD(n_feat,
                               kernel_size_conv,
-                              padding="same")(acti1)
-        norm2 = layers.BatchNormalization()(conv2)
-        acti2 = layers.LeakyReLU()(norm2)
-        return acti2
+                              padding="same")(norm1)
+        acti2 = layers.LeakyReLU()(conv2)
+        norm2 = layers.BatchNormalization()(acti2)
+        return norm2
 
     def encoder_block(input, n_feat=32):
         """
@@ -130,7 +130,7 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, backbone=None, pretrained=True):
 
     if backbone is None:
         # encoder
-        for i in range(depth-1):
+        for i in range(depth):
             skip, current_layer = encoder_block(current_layer,
                                                     n_feat * (2 ** i))
             skip_layer.append(skip)
@@ -139,13 +139,12 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, backbone=None, pretrained=True):
         current_layer = two_conv(current_layer,
                                  n_feat * (2 ** (depth-1)))
         # decoder
-        for i in range(depth-2, -1, -1):
+        for i in range(depth-1, -1, -1):
             current_layer = decoder_block(current_layer,
                                           skip_layer[i],
                                           n_feat * (2 ** i))
     elif backbone == supported_backbone[0]:
-        if depth != 5 or n_feat != 64:
-            raise Exception("Error : UNet architecture incompatible, depth must be 5 and number of features 64.")
+        assert depth == 4 or n_feat == 64, "UNet architecture incompatible, depth must be 4 and number of features 64."
 
         backbone_model = tf.keras.applications.VGG16(include_top=False,
                                                      weights='imagenet' if pretrained else None,
