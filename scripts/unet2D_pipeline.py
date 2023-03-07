@@ -7,21 +7,18 @@ from skimage.transform import resize
 from carreno.cell.path import extract_metric
 from carreno.io.tifffile import metadata
 from carreno.processing.patches import volume_pred_from_img
+import unet2D_training
 
-data_folder = "data"  # folder where downloads and dataset will be put
-dataset_folder = data_folder + "/dataset"
-output_folder  = data_folder + "/output"
-filename       = dataset_folder + "/input/slik3.tif"  # path to an imagej tif volume with cell(s)
-model_path     = output_folder + "/model/unet2D_vgg16.h5"
-
-fname = lambda path : path.split("/")[-1].split(".", 1)[0]  # get filename without extension
-csv_output     = output_folder + "/" + fname(filename) + '_' + fname(model_path) + ".csv"
+get_fname  = lambda path : path.split("/")[-1].split(".", 1)[0]  # get filename without extension
+filename   = unet2D_training.test_volume  # path to an imagej tif volume with cell(s)
+model_path = unet2D_training.model_path
+csv_output = unet2D_training.config['TRAINING']['output'] + "/" + get_fname(filename) + '_' + get_fname(model_path) + ".csv"
 
 def main():
     try:
         # assuming unit is um
         distances = metadata(filename)["axe_dist"]
-        # convert scale to picometer like in imagej since selem is scaled for it
+        # convert scale to picometer like in imagej since convolution kernels are scaled for it (or at least, those which use scaling)
         distances = np.array(distances) * 1e6
     except:
         # if we don't have axis info, use default distances

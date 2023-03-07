@@ -15,3 +15,4 @@ cuda-python
 patchify
 albumentations
 volumentations-3D
+pyyaml

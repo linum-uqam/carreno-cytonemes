@@ -1,0 +1,47 @@
+# Parent directories for data
+BASE:
+  raw:         data/raw                    # where uncompressed data is or should be downloaded
+  output:      data/output                 # where script outputs should be
+  dataset:     data/dataset                # where data is
+  psf:         data/psf                    # where psf for deconvolutions are
+  drawing:     data/drawn_cyto             # Basile 2D drawing of cytonemes for pipeline validation
+
+VOLUME:
+  input:       data/dataset/input          # where labeled X inputs are
+  target:      data/dataset/target         # where labeled Y inputs are
+  soft_target: data/dataset/soft_target    # where soft labeled Y inputs are
+  weight:      data/dataset/weight         # where inputs sample weights are
+  soft_weight: data/dataset/soft_weight    # where inputs soft sample weights are
+  unlabeled:   data/dataset/unlabeled      # where unlabeled inputs are
+
+PATCH:
+  input:       data/dataset/input_p        # where labeled X patches are
+  target:      data/dataset/target_p       # where labeled Y patches are
+  soft_target: data/dataset/soft_target_p  # where soft labeled Y patches are
+  weight:      data/dataset/weight_p       # where inputs sample weights patches are
+  soft_weight: data/dataset/soft_weight_p  # where inputs soft sample weights patches are
+  unlabeled:   data/dataset/unlabeled_p    # where unlabeled patches are
+
+# For patch generation
+PREPROCESS:
+  n_cls: 3    # number of classes
+  patch:      # patch shape
+    - 48      # z axis
+    - 96      # y axis
+    - 96      # x axis
+  stride:     # stride/step for each axis
+    - 48      # z axis
+    - 48      # y axis
+    - 48      # x axis
+  blur: 1.5   # sigma for gaussian blur when generating soft labels
+
+# For training
+TRAINING:
+  output:   data/output/model  # directory where we save our models
+  epoch:    200                # number of epoch
+  batch2D:  48                 # batch size for 2D
+  batch3D:  1                  # batch size for 3D
+  patience: 10                 # number of epoch needed to trigger early stop
+  backbone:
+    - null
+    - VGG16

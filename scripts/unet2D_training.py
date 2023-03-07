@@ -9,110 +9,88 @@ from sklearn.model_selection import train_test_split
 from pathlib import Path
 from skimage.transform import resize
 
+# local imports
+import utils
 import carreno.nn.callbacks as cb
 from carreno.nn.unet import UNet, encoder_trainable
 from carreno.nn.generators import volume_slice_generator
 from carreno.nn.metrics import dice_score, bce_dice_loss
 from carreno.processing.patches import volume_pred_from_img
 
+config = utils.get_config()
 
-# validate dataset is present
-data_folder = "data"  # folder where downloads and dataset will be put
-dataset_folder = data_folder + "/dataset"
-output_folder =  data_folder + "/output"
-input_folder  =  dataset_folder + "/input_p"
-target_folder =  dataset_folder + "/target_p"
-test_volume =    dataset_folder + "/input/slik3.tif"
-test_target =    dataset_folder + "/target/slik3.tif"
-model_path =     output_folder +  "/model/unet2D_vgg16.h5"
-info_path =      output_folder + "/" + Path(model_path).name.split('.')[0]
-nb_class = 3
-batch_size = 256
-nb_epochs = 100
-input_shape = [64, 64, 1]
-class_weights = "balanced"  # None, "balanced"
-backbone = "vgg16"  # None, "vgg16"
+# main settings
+backbone       = config['TRAINING']['backbone'][0]
+depth          = 4
+n_features     = 64
+soft_labels    = 1  # use soft labels over hard
 
 # visualization
-test_split          = 1  # show if data split info
-test_generator      = 0  # show training gen output
-test_architecture   = 0  # show model summary
-test_prediction     = 1  # show a few prediction slices
+test_split        = 0  # show if data split info
+test_generator    = 0  # show training gen output
+test_architecture = 0  # show model summary
+test_prediction   = 1  # show a few prediction slices
 
-def get_volumes_slices(paths):
-    """
-    Get all slice index for all the volumes in list of paths
-    Parameters
-    ----------
-    paths : [str]
-        Paths to volumes to slice up
-    Returns
-    -------
-    slices : [[str, int]]
-        list of list containing volume names and slice indexes
-    """
-    slices = []
+y, w        = ('sy', 'sw') if soft_labels else ('y', 'w')
+input_shape = config['PREPROCESS']['patch'][1:] + [1]
+test_volume = os.path.join(config['VOLUME']['input'],    "slik6.tif")
+test_target = os.path.join(config['VOLUME']['target'],   Path(test_volume).name)
+model_path  = os.path.join(config['TRAINING']['output'], "unet2D_test.h5")
+info_path   = os.path.join(config['TRAINING']['output'], Path(model_path).name.split('.')[0])
 
-    for path in paths:
-        tif_file = tif.TiffFile(path)
-        for i in range(len(tif_file.pages)):
-            slices.append([path, i])
-    
-    return slices
+# parameters and hyperparameters
+LR = 0.001
+
+# metrics
+metrics = [dice_score(smooth=1.)]
+
+# callbacks
+early_stop = cb.early_stop(metric='val_dice',
+                           mode='max',
+                           patience=config['TRAINING']['patience'])
+model_checkpoint = cb.model_checkpoint(model_path,
+                                       metric='val_dice',
+                                       mode='max')
 
 
 def main():
     # split data between training, validation and test
-    x_data = []
-    x_test = []
-    test_vol_name = Path(test_volume).name.split('.')[0]
-    for f in os.listdir(input_folder):
-        if test_vol_name in f.split('_')[0]:
-            x_test.append(input_folder + "/" + f)
-        else:
-            x_data.append(input_folder + "/" + f)
-        
-    y_data = []
-    y_test = []
-    for f in os.listdir(target_folder):
-        if test_vol_name in f.split('_')[0]:
-            y_test.append(target_folder + "/" + f)
-        else:
-            y_data.append(target_folder + "/" + f)            
-
-    x_train, x_valid, y_train, y_valid = train_test_split(x_data,
-                                                          y_data,
-                                                          test_size=0.2,
-                                                          random_state=6)
-
+    train, valid, test = utils.split_dataset(0.2, 0.2)
+    
     # slice up volumes for img
-    x_train = get_volumes_slices(x_train)
-    y_train = get_volumes_slices(y_train)
-    x_valid = get_volumes_slices(x_valid)
-    y_valid = get_volumes_slices(y_valid)
-    x_test  = get_volumes_slices(x_test)
-    y_test  = get_volumes_slices(y_test)
-
+    x_train = utils.get_volumes_slices(train['x'])
+    y_train = utils.get_volumes_slices(train[y])
+    w_train = utils.get_volumes_slices(train[w])
+    x_valid = utils.get_volumes_slices(valid['x'])
+    y_valid = utils.get_volumes_slices(valid[y])
+    w_valid = utils.get_volumes_slices(valid[w])
+    x_test  = utils.get_volumes_slices(test['x'])
+    y_test  = utils.get_volumes_slices(test[y])
+    w_test  = utils.get_volumes_slices(test[w])
+    
     if test_split:
         print("Training dataset")
         print("-nb of volumes :",
               [j for i, j in x_train].count(0), "/",
-              [j for i, j in y_train].count(0))
-        print("-nb of slices :", len(x_train), "/", len(y_train))
+              [j for i, j in y_train].count(0), "/",
+              [j for i, j in w_train].count(0))
+        print("-nb of slices :", len(x_train), "/", len(y_train), "/", len(w_train))
         
         print("Validation dataset")
         print("-nb of volumes :",
               [j for i, j in x_valid].count(0), "/",
-              [j for i, j in y_valid].count(0))
-        print("-nb of slices :", len(x_valid), "/", len(y_valid))
+              [j for i, j in y_valid].count(0), "/",
+              [j for i, j in w_valid].count(0))
+        print("-nb of slices :", len(x_valid), "/", len(y_valid), "/", len(w_valid))
         
         # not using the patch, only the full volume for test for now
         print("Testing dataset")
         print("-nb of volumes :",
               [j for i, j in x_test].count(0), "/",
-              [j for i, j in y_test].count(0))
-        print("-nb of slices :", len(x_test), "/", len(y_test))
-        
+              [j for i, j in y_test].count(0), "/",
+              [j for i, j in w_test].count(0))
+        print("-nb of slices :", len(x_test), "/", len(y_test), "/", len(w_test))
+    
     # setup data augmentation
     aug = A.Compose([
         A.Rotate(limit=90, interpolation=1, border_mode=4, p=0.2),
@@ -120,27 +98,26 @@ def main():
         A.Flip(0, p=0.2),
         A.Flip(1, p=0.2),
         A.Resize(input_shape[0], input_shape[1], interpolation=1, always_apply=True, p=1)
-    ], p=1)
+    ], additional_targets={"weight":"mask"}, p=1)
 
     # ready up the data generators
     train_gen = volume_slice_generator(x_train,
                                        y_train,
-                                       batch_size,
+                                       weight=w_train,
+                                       size=config['TRAINING']['batch2D'],
                                        augmentation=aug,
-                                       shuffle=True,
-                                       weight=class_weights)
+                                       shuffle=True)
     valid_gen = volume_slice_generator(x_valid,
                                        y_valid,
-                                       batch_size,
+                                       weight=w_valid,  # not used for back propagation, but can be useful with callback to save best model
+                                       size=config['TRAINING']['batch2D'],
                                        augmentation=None,
-                                       shuffle=False)
+                                       shuffle=True)    # I'm kind of torn on putting shuffle on validation data, but otherwise, the extra patches are never used  
     test_gen  = volume_slice_generator(x_test,
                                        y_test,
-                                       batch_size,
+                                       size=config['TRAINING']['batch2D'],
                                        augmentation=None,
                                        shuffle=False)
-    
-    train_gen.on_epoch_end()  # shuffle
 
     if test_generator:
         print("Training gen info")
@@ -158,9 +135,9 @@ def main():
         
         # cool visuals which are a joy to debug
         nb_columns = len(batch0)
-        for i in range(batch_size):
+        for i in range(config['TRAINING']['batch2D']):
             for j, k in zip(range(1, nb_columns+1), ['x', 'y', 'w']):
-                plt.subplot(batch_size, nb_columns, i*nb_columns+j)
+                plt.subplot(config['TRAINING']['batch2D'], nb_columns, i*nb_columns+j)
                 plt.title(k + " " + str(i), fontsize=12)
                 plt.imshow(batch0[j-1][i], vmin=batch0[j-1].min(), vmax=batch0[j-1].max())
         
@@ -168,66 +145,56 @@ def main():
         plt.show()
 
     # get unet model
-    model = UNet(input_shape, nb_class, depth=5, n_feat=64, backbone=backbone)
+    model = UNet(input_shape,
+                 n_class=config['PREPROCESS']['n_cls'],
+                 depth=depth,
+                 n_feat=n_features,
+                 backbone=backbone)
     
+    total_steps = len(train_gen) * config['TRAINING']['epoch']
+    schedule = tf.keras.optimizers.schedules.CosineDecay(LR, decay_steps=total_steps)
+    optim = tf.keras.optimizers.Adam(learning_rate=schedule)
+
     if test_architecture:
         model.summary()
-
-    # parameters and hyperparameters
-    LR = 0.0001
-    optim = tf.keras.optimizers.Adam(LR)
-
-    # metrics
-    metrics = [dice_score(smooth=1.)]
-
-    # callbacks
-    early_stop = cb.early_stop(metric='val_dice',
-                               mode='max',
-                               patience=5)
-    model_checkpoint = cb.model_checkpoint(model_path,
-                                           metric='val_dice',
-                                           mode='max')
-    cm_history = cb.confusion_matrix_history(train_generator=train_gen,
-                                             validation_generator=valid_gen,
-                                             n_class=nb_class)
-
-    # compile model
-    model.compile(optimizer=optim,
-                  loss=bce_dice_loss,
-                  metrics=metrics,
-                  sample_weight_mode="temporal")
 
     if backbone:
         encoder_trainable(model, False)
         
+        model.compile(optimizer=optim,
+                      loss=bce_dice_loss,
+                      metrics=metrics,
+                      sample_weight_mode="temporal")
+
         # train the decoder a little before
         model.fit(train_gen,
                   validation_data=valid_gen,
                   steps_per_epoch=len(train_gen),
                   validation_steps=len(valid_gen),
-                  batch_size=batch_size,
-                  epochs=5)
+                  batch_size=config['TRAINING']['batch2D'],
+                  epochs=10)
+
         encoder_trainable(model, True)
+
+    # compile model to add losses and metrics
+    # (also needs to be called everytime we change trainable layers)
+    model.compile(optimizer=optim,
+                  loss=bce_dice_loss,
+                  metrics=metrics,
+                  sample_weight_mode="temporal")
 
     # training
     history = model.fit(train_gen,
                         validation_data=valid_gen,
                         steps_per_epoch=len(train_gen),
                         validation_steps=len(valid_gen),
-                        batch_size=batch_size,
-                        epochs=nb_epochs,
+                        batch_size=config['TRAINING']['batch2D'],
+                        epochs=config['TRAINING']['epoch'],
                         verbose=1,
                         callbacks=[
                             model_checkpoint,
-                            early_stop,
-                            #cm_history
+                            early_stop
                         ])
-
-    # in case we didn't use cm callback to save time
-    if len(cm_history.tcm) > 0:
-        # save confusion matrix history in callback
-        np.save(info_path + "_tcm.npy", np.stack(cm_history.tcm, axis=0))  # training cm
-        np.save(info_path + "_vcm.npy", np.stack(cm_history.vcm, axis=0))  # validation cm
 
     # metrics display (acc, loss, etc.)
     loss_hist = history.history['loss']
@@ -240,11 +207,8 @@ def main():
     plt.ylabel('Loss')
     plt.legend()
     plt.savefig(info_path + "_loss.png")
-    if test_prediction:
-        plt.show()
-    else:
-        plt.clf()
-
+    plt.show() if test_prediction else plt.clf()
+    
     dice_hist = history.history['dice']
     val_dice_hist = history.history['val_dice']
 
@@ -255,10 +219,7 @@ def main():
     plt.ylabel('F1 Score')
     plt.legend()
     plt.savefig(info_path + "_dice.png")
-    if test_prediction:
-        plt.show()
-    else:
-        plt.clf()
+    plt.show() if test_prediction else plt.clf()
 
     # test prediction
     best_model = tf.keras.models.load_model(model_path, compile=False)
