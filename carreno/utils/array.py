@@ -14,9 +14,9 @@ def normalize(x, minv=0, maxv=1):
     Returns
     -------
     y : ndarray
-        normalized x
+        normalized x with dtype float32
     """
-    y = np.array(x)
+    y = np.array(x, dtype=np.float32)
     y = y + (0 - y.min())
     y = y / y.max()
     return y * (maxv - minv) + minv
@@ -66,48 +66,52 @@ def coord2np(coord):
     return tuple([[i] for i in coord])
 
 
-def is_2D(shape):
-    """check if shape is probably a 2D image
+def nb_color_channel(shape):
+    """
+    Assuming shape is for an standard image or a volume
     Parameters
     ----------
     shape : [int]
-        ndarray shape
+        Shape of array-like
+    Returns
+    -------
+    _ : int
+        Number of color channels, 0 if grayscale
+    """
+    if len(shape) == 2 or (len(shape) == 3 and shape[-1] > 4):
+        return 0
+    return shape[-1]
+
+
+def ndim_for_pixel(shape):
+    """
+    Get number of axis in shape without color channels
+    Parameters
+    ----------
+    shape : [int]
+        Shape of array-like
     Returns
     -------
     _ : bool
         if shape could be for 2D image
     """
     # check if grayscale, rgb or rgba
-    return len(shape) == 2 or (len(shape) == 3 and (shape[2] == 3 or shape[2] == 4))
+    nch = nb_color_channel(shape)
+    return len(shape) - min([nch, 1])  # either minus 0 or 1
 
-
-def is_3D(shape):
-    """check if shape is probably a 3D volume
-    Parameters
-    ----------
-    shape : [int]
-        ndarray shape
-    Returns
-    -------
-    _ : bool
-        if shape could be for 3D volume
-    """
-    # check if grayscale, rgb or rgba
-    return len(shape) == 3 or (len(shape) == 4 and (shape[3] == 3 or shape[3] == 4))
-
-
-def gaussian_filter(sigma=1.0, mu=0.0):
-    # https://stackoverflow.com/questions/14873203/plotting-of-1-dimensional-gaussian-distribution-function
-
-    from matplotlib import pyplot as mp
-    import numpy as np
-
-    def gaussian(x, mu, sig):
-        return np.exp(-np.power(x - mu, 2.) / (2 * np.power(sig, 2.)))
-
-    x_values = np.linspace(-3, 3, 120)
-    for mu, sig in [(-1, 1), (0, 2), (2, 3)]:
-        mp.plot(x_values, gaussian(x_values, mu, sig))
-
-    mp.show()
-    return ...
+# TODO generate a gaussian distribution?
+#def gaussian_filter(sigma=1.0, mu=0.0):
+#    # https://stackoverflow.com/questions/14873203/plotting-of-1-dimensional-gaussian-distribution-function
+#
+#    from matplotlib import pyplot as mp
+#    import numpy as np
+#
+#    def gaussian(x, mu, sig):
+#        return np.exp(-np.power(x - mu, 2.) / (2 * np.power(sig, 2.)))
+#
+#    x_values = np.linspace(-3, 3, 120)
+#    for mu, sig in [(-1, 1), (0, 2), (2, 3)]:
+#        mp.plot(x_values, gaussian(x_values, mu, sig))
+#
+#    mp.show()
+#    return ...

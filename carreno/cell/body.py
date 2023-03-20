@@ -3,36 +3,6 @@ import scipy.ndimage as nd
 from skimage.feature import peak_local_max
 from skimage.segmentation import watershed
 
-# Replace or merge with seperate_blob implementations in carreno.utils.morphology
-def seperate_blobs(x, min_dist=10, distances=[1, 1, 1]):
-    """Separate blobs using watershed. Seeds are found using the foreground pixels distance from background pixels.
-    Parameters
-    ----------
-    x : list, ndarray
-        binary mask of blobs
-    min_dist : float
-        minimum distance between seeds for watershed
-    distances : list, ndarray
-        axis distances in order (TODO not used)
-    Returns
-    -------
-    label : ndarray
-        labelled blob
-    """
-    # find 1 local max per blob
-    distance = nd.distance_transform_edt(x)
-    coords = peak_local_max(distance,
-                            min_distance=min_dist,
-                            labels=x > 0)
-    
-    # seperate the cells
-    local_max = np.zeros(distance.shape, dtype=bool)
-    local_max[tuple(coords.T)] = True
-    markers = nd.label(local_max)[0]
-    label = watershed(-distance, markers, mask=x)
-
-    return label
-
 
 def associate_cytoneme(body_label, cyto_label):
     """Matches cytonemes with the nearest body.
