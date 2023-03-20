@@ -3,7 +3,6 @@ import tensorflow as tf
 import tifffile as tif
 import numpy as np
 from sklearn.utils import shuffle
-from carreno.utils.util import is_2D, is_3D
 
 
 def get_volumes_slices(paths):
@@ -100,7 +99,8 @@ class volume_slice_generator(tf.keras.utils.Sequence):
                 self.x_shape = (x_info.pages[0].shape)
             with tif.TiffFile(self.y[0][0]) as y_info:
                 self.y_shape = (y_info.pages[0].shape)
-            self.__missing_color_ch = len(self.x_shape) < 3
+            self.__x_missing_color_ch = len(self.x_shape) < 3
+            self.__y_missing_color_ch = len(self.y_shape) < 3
     
     def __len__(self):
         # number of batch (some img might not be included in the epoch)
@@ -148,9 +148,13 @@ class volume_slice_generator(tf.keras.utils.Sequence):
             
             data_i += 1
 
-        if self.__missing_color_ch:
+        if self.__x_missing_color_ch:
             # add color channel
             x_batch = np.stack([x_batch] * self.nb_color_ch, axis=-1)
+        
+        if self.__y_missing_color_ch:
+            # add color channel
+            y_batch = np.stack([y_batch] * self.nb_color_ch, axis=-1)
 
         batch = [x_batch, y_batch] if self.w is None else [x_batch, y_batch, w_batch]
 
@@ -200,7 +204,8 @@ class volume_generator(tf.keras.utils.Sequence):
                 self.x_shape = tuple([len(x_info.pages)] + list(x_info.pages[0].shape))
             with tif.TiffFile(self.y[0]) as y_info:
                 self.y_shape = tuple([len(y_info.pages)] + list(y_info.pages[0].shape))
-            self.__missing_color_ch = len(self.x_shape) < 4
+            self.__x_missing_color_ch = len(self.x_shape) < 4
+            self.__y_missing_color_ch = len(self.y_shape) < 4
     
     def __len__(self):
         # number of batch (some img might not be included in the epoch)
@@ -234,8 +239,11 @@ class volume_generator(tf.keras.utils.Sequence):
             data_i += 1
         
         # model architecture requires a color channel axis
-        if self.__missing_color_ch:
+        if self.__x_missing_color_ch:
             x_batch = np.stack([x_batch] * self.nb_color_ch, axis=-1)
+        
+        if self.__y_missing_color_ch:
+            y_batch = np.stack([y_batch] * self.nb_color_ch, axis=-1)
         
         batch = [x_batch, y_batch] if self.w is None else [x_batch, y_batch, w_batch]
         
