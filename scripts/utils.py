@@ -5,6 +5,8 @@ import tifffile as tif
 import numpy as np
 import random
 
+config_path = 'config.yml'
+
 def get_config():
     """
     Get configutations from configuration yaml file
@@ -18,55 +20,62 @@ def get_config():
         infos = yaml.safe_load(file)
     return infos
 
+# TODO maybe save volumes split to avoid training on validation or test data later on in another script
+#def modify_split(valid, test):
+#    """
+#    Update dataset split in configuration yaml file
+#    Parameters
+#    ----------
+#    valid : list
+#        list of validation volumes
+#    test : list
+#        list of test volumes
+#    Returns
+#    -------
+#    None
+#    """
+#    with open('config.yml', 'r') as file:
+#        data_split = {
+#            "TRAINING":{
+#                "split":{
+#                    "valid": valid,
+#                    "test":  test
+#                }
+#            }
+#        }
+#        yaml.dump(data_split, file, default_flow_style=False)
+#    return
 
-def get_volumes_slices(paths):
+
+def split_volumes(vtype, valid, test, shuffle=False):
     """
-    Get all slice index for all the volumes in list of paths
+    Split volumes in dataset between training, validation and test.
+    Training ratio is whatever that's left.
     Parameters
     ----------
-    paths : [str]
-        Paths to volumes to slice up
-    Returns
-    -------
-    slices : [[str, int]]
-        list of list containing volume names and slice indexes
-    """
-    slices = []
-
-    for path in paths:
-        tif_file = tif.TiffFile(path)
-        for i in range(len(tif_file.pages)):
-            slices.append([path, i])
-    
-    return slices
-
-
-def split_dataset(valid, test, shuffle=False):
-    """
-    Split dataset in training, validation and test. Training is whatever that's left.
-    Parameters
-    ----------
+    vtype : str
+        Volume type in config['VOLUME'] for parsing name
     valid : float
-        validation data ratio over dataset
+        Validation data ratio over dataset
     test : float
-        test data ratio over dataset
+        Test data ratio over dataset
     shuffle : bool
-        shuffle data
+        Shuffle data
     Returns
     -------
-    train_data : dict
-        dict of patches for training
-    valid_data : dict
-        dict of patches for validation
-    test_data : dict
-        dict of patches for testing
+    train_data : [Path]
+        List of volumes for training
+    valid_data : [Path]
+        List of volumes for validation
+    test_data : [Path]
+        List of volumes for testing
     """
     config = get_config()
     
     # list ctrl and slik volumes
     ctrl = []
     slik = []
-    for f in os.listdir(config['VOLUME']['input']):
+    for f in os.listdir(config['VOLUME'][vtype]):
         lower_f = f.lower()
         if "ctrl" in lower_f:
             ctrl.append(f)
@@ -108,9 +117,40 @@ def split_dataset(valid, test, shuffle=False):
 
     # training data split
     train_data = ctrl + slik
+
+    # write split into yaml file TODO
+
+    return train_data, valid_data, test_data
+
+
+def split_patches(ptype, pouts, train, valid, test):
+    """
+    Split patches in dataset based on training, validation and test volumes.
+    Parameters
+    ----------
+    ptype : str
+        Patch type in config['PATCH'] for parsing name
+    pouts : [str]
+        Patch types in config['PATCH'] for output paths
+    train : [Path]
+        Training volume paths
+    valid : [Path]
+        Validation volume paths
+    test : [Path]
+        Testing volume paths
+    Returns
+    -------
+    train_data : dict
+        Dict of patches for training
+    valid_data : dict
+        Dict of patches for validation
+    test_data : dict
+        Dict of patches for testing
+    """
+    config = get_config()
     
     # rm file extensions
-    data = [train_data, valid_data, test_data]
+    data = [train, valid, test]
     for i in range(len(data)):
         for j in range(len(data[i])):
             data[i][j] = data[i][j].rsplit('.', 1)[0]
@@ -142,27 +182,59 @@ def split_dataset(valid, test, shuffle=False):
         return contains
 
     # seperate patches based on split
-    patches = list(os.listdir(config['PATCH']['input']))
-    train_p = elem_with_substrings(patches, train_data)
-    valid_p = elem_with_substrings(patches, valid_data)
-    test_p  = elem_with_substrings(patches, test_data)
+    patches = list(os.listdir(config['PATCH'][ptype]))
+    patch_set = []
+    for vol_set in data:
+        patch_set.append(elem_with_substrings(patches, vol_set))
 
     def add_dir_to_files(dir, files):
         return [os.path.join(dir, f) for f in files]
 
     # add parent folders for a working file path
-    patch_ctgs = [train_p, valid_p, test_p]
     rtn_value = []
-    for patches_for_ctg in patch_ctgs:
-        rtn_value.append({
-            'x':  add_dir_to_files(config['PATCH']['input'],       patches_for_ctg),
-            'y':  add_dir_to_files(config['PATCH']['target'],      patches_for_ctg),
-            'sy': add_dir_to_files(config['PATCH']['soft_target'], patches_for_ctg),
-            'w':  add_dir_to_files(config['PATCH']['weight'],      patches_for_ctg),
-            'sw': add_dir_to_files(config['PATCH']['soft_weight'], patches_for_ctg),
-        })
+    for patches_for_ctg in patch_set:
+        patch_dict = {}
+        for pout in pouts:
+            patch_dict[pout] = add_dir_to_files(config['PATCH'][pout], patches_for_ctg)
+        rtn_value.append(patch_dict)
 
     return rtn_value
+
+
+def split_dataset(vtype, pouts, valid, test, shuffle=False):
+    """
+    Split patches between training, validation and test.
+    Training ratio is whatever that's left.
+    Parameters
+    ----------
+    vtype : str
+        Volume type in config['VOLUME'] for parsing name
+    pouts : [str]
+        Patch types in config['PATCH'] for output paths
+    valid : float
+        Validation data ratio over dataset
+    test : float
+        Test data ratio over dataset
+    shuffle : bool
+        Shuffle data
+    Returns
+    -------
+    train_data : dict
+        Dict of patches for training
+    valid_data : dict
+        Dict of patches for validation
+    test_data : dict
+        Dict of patches for testing
+    """
+    trn, vld, tst = split_volumes(vtype=vtype,
+                                  valid=valid,
+                                  test=test,
+                                  shuffle=shuffle)
+    return split_patches(ptype=vtype,
+                         pouts=pouts,
+                         train=trn,
+                         valid=vld,
+                         test=tst)
 
 
 def main():

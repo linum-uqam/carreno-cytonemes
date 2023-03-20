@@ -17,8 +17,8 @@ from carreno.processing.patches import patchify, reshape_patchify
 download =                  0  # False if the folders are already downloaded
 uncompress_raw =            0  # uncompress archives in raw data, error if uncompressed files are missing with options uncompress_raw and hand_drawn_cyto
 create_labeled_dataset =    0  # organise uncompressed labeled data
-create_sample_weights =     1  # make weight distributions for labeled data patches (during `create_labeled_dataset`)
-create_unlabeled_dataset =  0  # organise uncompressed unlabeled data
+create_sample_weights =     0  # make weight distributions for labeled data patches (during `create_labeled_dataset`)
+create_unlabeled_dataset =  1  # organise uncompressed unlabeled data
 create_patches =            1  # seperate volume into patches
 hand_drawn_cyto_dataset =   0  # save hand drawn cytonemes (2D) in data
 cleanup_uncompressed =      0  # cleanup extracted files in raw folder
@@ -401,8 +401,8 @@ def main():
     if create_unlabeled_dataset:
         # this will override input and target folders so be careful
         print("Creating unlabeled dataset from raw data ...", end=" ")
-        filenames = [str(i) for i in range(len(unlabeled_volumes))]
-        #filenames = [os.path.splitext(os.path.basename(fn))[0] for fn in unlabeled_volumes]  # get filenames w/ extensions (very long)
+        #filenames = [str(i) for i in range(len(unlabeled_volumes))]
+        filenames = [os.path.splitext(os.path.basename(fn))[0] for fn in unlabeled_volumes]  # get filenames w/ extensions (very long)
         create_dataset_input_folder(config['VOLUME']['unlabeled'], list(zip(unlabeled_volumes, filenames)))
         print("done")
 

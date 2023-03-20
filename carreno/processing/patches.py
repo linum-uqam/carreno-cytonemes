@@ -4,7 +4,7 @@ from skimage.transform import resize
 import patchify as p
 import scipy
 
-from carreno.utils.util import is_2D, is_3D
+from carreno.utils.array import ndim_for_pixel
 
 
 def reshape_patchify(x, n_axis=3):
@@ -59,14 +59,17 @@ def patchify(x, patch_shape, stride=None, resize_mode=2, pad_mode='constant', co
     resize_shape = []
     
     for i in range(len(patch_shape)):
-        nb_patch_over_axis = max(1, (x.shape[i] - patch_shape[i] + stride[i]) / stride[i])
+        xax = x.shape[i]
+        pax = patch_shape[i]
+        sax = stride[i]
+        nb_patch_over_axis = max(1, (xax - pax + sax) / sax)
         
         if resize_mode == 0:
             nb_patch_over_axis = int(np.ceil(nb_patch_over_axis))
         else:
             nb_patch_over_axis = int(np.round(nb_patch_over_axis))
         
-        ax_length = nb_patch_over_axis * stride[i] + patch_shape[i] - stride[i]
+        ax_length = nb_patch_over_axis * sax + pax - sax
         resize_shape.append(ax_length)
 
     resized = x.copy()
@@ -121,7 +124,7 @@ def unpatchify_w_nearest(patches, order, patch_shape, stride=None):
     patch_shape = patch_shape
     patch_center = []
     nd_shape = []
-    tw_dim = is_2D(patch_shape)
+    tw_dim = ndim_for_pixel(patch_shape) == 2
     
     for i in range(len(order)):
         ax_length = order[i] * stride[i] + patch_shape[i] - stride[i]
@@ -189,7 +192,7 @@ def unpatchify_w_weight(patches, order, patch_shape, stride=None, weight=None):
         weight = np.ones(patch_shape)
     
     nd_shape = []
-    tw_dim = is_2D(stride)
+    tw_dim = ndim_for_pixel(stride) == 2
 
     for i in range(len(order)):
         ax_length = patch_shape[i] + (order[i] - 1) * stride[i]
@@ -271,8 +274,8 @@ def volume_pred_from_img(model, x, stride, weight=None):
         model to predict
     x : ndarray
         volume to predict
-    stride : [int, int, int]
-        stride between patches
+    stride : [int]
+        stride between patches without color axis
     Returns
     -------
     pred_volume : ndarray
@@ -280,14 +283,18 @@ def volume_pred_from_img(model, x, stride, weight=None):
     """
     # get input shape
     #patch_shape = [1] + list(model.get_config()["layers"][0]["config"]["batch_input_shape"][1:-1])  # weird flex but okay
-    input_patch_shape = [1] + list(model.layers[0].input.shape[1:-1])
+    input_patch_shape = [1] + list(model.layers[0].input.shape[1:])
+    input_stride = list(stride) + input_patch_shape[len(stride):]
     
     # patchify to fit inside model input
-    patch = patchify(x, patch_shape=input_patch_shape, stride=stride, resize_mode=0)
+    patch = patchify(x,
+                     patch_shape=input_patch_shape,
+                     stride=input_stride,
+                     resize_mode=0)
     patch, order = reshape_patchify(patch, len(input_patch_shape))
     
-    # remove z axis (we want an image) and add color channel
-    preprocess = np.expand_dims(np.squeeze(np.array(patch), axis=1), axis=-1)
+    # remove z axis (we want an image)
+    preprocess = np.squeeze(np.array(patch), axis=1)
     
     # to avoid memory issues, use an iterator for prediction
     iterator = __pred_iterator(model, preprocess, True)
@@ -321,25 +328,26 @@ def volume_pred_from_vol(model, x, stride, weight=None):
         model to predict
     x : ndarray
         volume to predict
-    stride : [int, int, int]
-        stride between patches
+    stride : [int]
+        stride between patches without color axis
     Returns
     -------
     pred_volume : ndarray
         predicted volume
     """
     # get input shape
-    input_patch_shape = list(model.layers[0].input.shape[1:-1])
+    input_patch_shape = list(model.layers[0].input.shape[1:])
+    input_stride = list(stride) + input_patch_shape[len(stride):]
 
     # patchify to fit inside model input
-    patch = patchify(x, patch_shape=input_patch_shape, resize_mode=0, stride=stride)
+    patch = patchify(x,
+                     patch_shape=input_patch_shape,
+                     stride=input_stride,
+                     resize_mode=0)
     patch, order = reshape_patchify(patch, len(input_patch_shape))
-
-    # add color channel
-    preprocess = np.expand_dims(np.array(patch), axis=-1)
     
     # to avoid memory issues, use an iterator for prediction
-    iterator = __pred_iterator(model, preprocess, False)
+    iterator = __pred_iterator(model, patch, False)
     
     # get output shape
     output_patch_shape = model.layers[-1].output.shape[1:]

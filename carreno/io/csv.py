@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import csv
-from carreno.utils.util import euclidean_dist
+from carreno.utils.array import euclidean_dist
 
 
 def cells_info_csv(filename, cells_info, distances):

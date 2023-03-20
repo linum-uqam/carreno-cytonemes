@@ -58,16 +58,14 @@ def main():
         return
 
     tests = [
-        {"name":"UNet/2D/gray/sigmoid/none ", "shape":[32,32,1],    "n_class":2, "depth":3, "n_feat":8,  "backbone":None   },
-        {"name":"UNet/2D/gray/softmax/none ", "shape":[32,32,1],    "n_class":3, "depth":3, "n_feat":8,  "backbone":None   },
-        {"name":"UNet/2D/rgb /softmax/none ", "shape":[32,32,3],    "n_class":3, "depth":3, "n_feat":8,  "backbone":None   },
-        {"name":"UNet/2D/gray/softmax/vgg16", "shape":[32,32,1],    "n_class":3, "depth":5, "n_feat":64, "backbone":"vgg16"},  # backbone TODO
-        {"name":"UNet/2D/rgb /softmax/vgg16", "shape":[32,32,3],    "n_class":3, "depth":5, "n_feat":64, "backbone":"vgg16"},
-        {"name":"UNet/3D/gray/sigmoid/none ", "shape":[32,32,32,1], "n_class":2, "depth":3, "n_feat":8,  "backbone":None   },
-        {"name":"UNet/3D/gray/softmax/none ", "shape":[32,32,32,1], "n_class":3, "depth":3, "n_feat":8,  "backbone":None   },
-        {"name":"UNet/3D/rgb /softmax/none ", "shape":[32,32,32,3], "n_class":3, "depth":3, "n_feat":8,  "backbone":None   },
-        {"name":"UNet/3D/gray/softmax/vgg16", "shape":[32,32,32,1], "n_class":3, "depth":5, "n_feat":64, "backbone":"vgg16"},  # backbone TODO
-        {"name":"UNet/3D/rgb /softmax/vgg16", "shape":[32,32,32,3], "n_class":3, "depth":5, "n_feat":64, "backbone":"vgg16"},
+        {"name":"UNet/2D/gray/none ", "shape":[32,32,1],    "n_class":3, "depth":3, "n_feat":8,  "backbone":None   },
+        {"name":"UNet/2D/rgb /none ", "shape":[32,32,3],    "n_class":3, "depth":3, "n_feat":8,  "backbone":None   },
+        {"name":"UNet/2D/gray/vgg16", "shape":[32,32,1],    "n_class":3, "depth":4, "n_feat":64, "backbone":"vgg16"},
+        {"name":"UNet/2D/rgb /vgg16", "shape":[32,32,3],    "n_class":3, "depth":4, "n_feat":64, "backbone":"vgg16"},
+        {"name":"UNet/3D/gray/none ", "shape":[32,32,32,1], "n_class":3, "depth":3, "n_feat":8,  "backbone":None   },
+        {"name":"UNet/3D/rgb /none ", "shape":[32,32,32,3], "n_class":3, "depth":3, "n_feat":8,  "backbone":None   },
+        {"name":"UNet/3D/gray/vgg16", "shape":[32,32,32,1], "n_class":3, "depth":4, "n_feat":64, "backbone":"vgg16"},
+        {"name":"UNet/3D/rgb /vgg16", "shape":[32,32,32,3], "n_class":3, "depth":4, "n_feat":64, "backbone":"vgg16"},
     ] 
 
     print()

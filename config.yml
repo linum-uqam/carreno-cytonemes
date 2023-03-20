@@ -38,9 +38,9 @@ PREPROCESS:
 # For training
 TRAINING:
   output:   data/output/model  # directory where we save our models
-  epoch:    200                # number of epoch
-  batch2D:  48                 # batch size for 2D
-  batch3D:  1                  # batch size for 3D
+  epoch:    100                # number of epoch
+  batch2D:  144                # batch size for 2D
+  batch3D:  3                  # batch size for 3D
   patience: 10                 # number of epoch needed to trigger early stop
   backbone:
     - null

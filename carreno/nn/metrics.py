@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 import tensorflow as tf
 from tensorflow.keras.losses import CategoricalCrossentropy
+import scipy
+import numpy as np
 
 #-------------#
 # Coefficient #
@@ -89,6 +91,74 @@ def bce_dice_loss(y_true, y_pred):
     return loss
 
 
-# TODO try out these metrics
-# https://github.com/frankkramer-lab/MIScnn/blob/master/miscnn/neural_network/metrics.py
-# asymmetric_focal_loss : for unbalanced dataset, better than Dice?
+def adap_wing_loss(theta=0.5, alpha=2.1, omega=14, epsilon=1):
+    """
+    Adaptive Wing loss. Used for heatmap ground truth.
+    This code is the Keras adaptation of ivadomed implementation of AdapWingLoss with PyTorch
+    # https://github.com/ivadomed/ivadomed/blob/bd904e5e139fa6a437abfc225216f6057824f1e3/ivadomed/losses.py
+    Parameters
+    ----------
+    theta : float
+        Threshold between linear and non linear loss.
+    alpha : float
+        Used to adapt loss shape to input shape and make loss smooth at 0 (background).
+        It needs to be slightly above 2 to maintain ideal properties.
+    omega : float
+        Multiplicating factor for non linear part of the loss.
+    epsilon : float
+        factor to avoid gradient explosion. It must not be too small
+    Returns
+    -------
+    metric_function : function
+        Function to calculate Dice score between target and prediction
+    """
+
+    def loss_function(input, target):
+        eps = epsilon
+        # Compute adaptative factor
+        A = omega * (1 / (1 + tf.pow(theta / eps,
+                                             alpha - target))) * \
+            (alpha - target) * tf.pow(theta / eps,
+                                              alpha - target - 1) * (1 / eps)
+
+        # Constant term to link linear and non linear part
+        C = (theta * A - omega * tf.math.log(1 + tf.pow(theta / eps, alpha - target)))
+
+        batch_size = target.shape[0]
+        
+        mask = np.zeros_like(target)
+        kernel = scipy.ndimage.generate_binary_structure(2, 2)
+        
+        # For 3D segmentation tasks
+        if len(input.shape) == 5:
+            kernel = scipy.ndimage.generate_binary_structure(3, 2)
+
+        for i in range(batch_size if batch_size else 0):
+            img_list = list()
+            img_list.append(np.round(target[i].cpu().numpy() * 255))
+            img_merge = np.concatenate(img_list)
+            img_dilate = scipy.ndimage.binary_opening(img_merge, np.expand_dims(kernel, axis=0))
+            img_dilate[img_dilate < 51] = 1  # 0*omega+1
+            img_dilate[img_dilate >= 51] = 1 + omega  # 1*omega+1
+            img_dilate = np.array(img_dilate, dtype=int)
+
+            mask[i] = img_dilate
+
+        diff_hm = tf.abs(target - input)
+        AWingLoss = A * diff_hm - C
+        tmp = AWingLoss.numpy()
+        idx = diff_hm < theta
+        tmp[idx] = omega * tf.math.log(1 + tf.pow(diff_hm / eps, alpha - target)).numpy()[idx]
+        AWingLoss = tf.convert_to_tensor(tmp)
+
+        AWingLoss *= tf.constant(mask)
+        sum_loss = tf.math.reduce_sum(AWingLoss)
+        #all_pixel = tf.sum(mask)
+        mean_loss = sum_loss  # / all_pixel
+
+        return mean_loss
+    
+    # for metric name output during tensorflow fitting
+    loss_function.__name__ = "AdaWingLoss"
+    
+    return loss_function

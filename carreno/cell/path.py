@@ -8,10 +8,9 @@ from skimage.measure import regionprops
 
 from carreno.cell.body import associate_cytoneme
 from skimage.morphology import skeletonize_3d
-from carreno.processing.classify import categorical_multiclass
 from carreno.utils.morphology import getNeighbors3D, seperate_blobs
 from carreno.io.csv import cells_info_csv
-import carreno.utils.util as utils
+import carreno.utils.array as utils
 
 def path_length(coordinates, distances=[1, 1, 1]):
     """Get length of a list of coordinates
@@ -326,27 +325,21 @@ def dfs_path_search(seed, coordinates, matrix, end_coordinates=None):
     return paths, paths_dot_product
 
 
-def extract_metric(pred, csv_output, distances=[1, 1, 1]):
-    # choose category based on softmax prediction
-    final_volume = categorical_multiclass(pred)
-    
+def extract_metric(body_m, cyto_m, csv_output, distances=[1, 1, 1]):
     cells_info = []
     
     # skeletonize cytonemes
-    cells_cyto = final_volume[..., 1]  # green
-    cyto_sk = skeletonize_3d(cells_cyto)  # range is [0, 255]
+    cyto_sk = skeletonize_3d(cyto_m)  # range is [0, 255]
     
     # label cytoneme
     cyto_lb = nd.label(cyto_sk,
                        structure=np.ones([3,3,3]))[0]
     cyto_region = regionprops(watershed(cyto_lb,
                                         markers=cyto_lb,
-                                        mask=cells_cyto))  # for later when calculating cyto/cell metric
+                                        mask=cyto_m))  # for later when calculating cyto/cell metric
 
     # label body
-    cells_body = final_volume[..., 2]  # blue
-    body_lb = seperate_blobs(cells_body,
-                             smoothing=2,
+    body_lb = seperate_blobs(body_m,
                              distances=distances)
 
     # associate cytonemes to body

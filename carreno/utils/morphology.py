@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 from scipy import ndimage as nd
-from carreno.utils.util import euclidean_dist
+from carreno.utils.array import euclidean_dist
 from skimage.measure import regionprops
 from skimage.feature import peak_local_max
 from skimage.segmentation import watershed
@@ -111,8 +111,7 @@ def create_sphere(radius, distances=[1, 1, 1]):
     return sphere
 
 
-# Replace or merge with seperate_blob implementations in carreno.utils.morphology
-def seperate_blobs(x, min_dist=10, smoothing=None, distances=[1, 1, 1]):
+def seperate_blobs(x, min_dist=10, distances=[1, 1, 1]):
     """Separate blobs using watershed. Seeds are found using the foreground pixels distance from background pixels.
     Parameters
     ----------
@@ -128,9 +127,6 @@ def seperate_blobs(x, min_dist=10, smoothing=None, distances=[1, 1, 1]):
         labelled blob
     """
     y = x.copy()
-    if smoothing:
-        sphere = create_sphere(2, distances)
-        y = binary_opening(x, selem=sphere)
 
     # find 1 local max per blob
     distance = nd.distance_transform_edt(y)

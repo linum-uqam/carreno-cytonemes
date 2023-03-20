@@ -5,26 +5,49 @@ import carreno.nn.layers
 
 
 def encoder_trainable(model, trainable=True):
-        """
-        Set UNet encoder layers as trainable or not.
-        Parameters
-        ----------
-        model : tf.Keras.Model
-            UNet model to set trainability
-        trainable : bool
-            True to make encoder layers trainable, False for untrainable
-        """
-        for layer in model.layers:
-            if "transpose" in layer.name.lower():
-                # decoder is starting
-                break
-            else:
-                layer.trainable = trainable
+    """
+    Set UNet encoder layers as trainable or not.
+    Parameters
+    ----------
+    model : tf.Keras.Model
+        UNet model to set trainability
+    trainable : bool
+        True to make encoder layers trainable, False for untrainable
+    """
+    for layer in model.layers:
+        if "transpose" in layer.name.lower():
+            # decoder is starting
+            break
+        else:
+            layer.trainable = trainable
+    
+    return
 
-        return
+
+def switch_top(model, activation='softmax'):
+    """
+    Switch top UNet convolution layer. Useful to experiment different
+    activation functions.
+    Parameters
+    ----------
+    model : tf.Keras.Model
+        UNet model to set trainability
+    trainable : bool
+        True to make encoder layers trainable, False for untrainable
+    """
+    inp               = model.layers[0]
+    layers            = carreno.nn.layers.layers(len(inp.input.shape) - 2)
+    before_last_layer = model.layers[-2]
+    last_layer        = model.layers[-1]
+    out               = layers.ConvXD(filters=last_layer.filters,
+                                      kernel_size=last_layer.kernel_size,
+                                      padding=last_layer.padding,
+                                      activation=activation,
+                                      name='pred')(before_last_layer.output)
+    return tf.keras.Model(inp.input, out)
 
 
-def UNet(shape, n_class=3, depth=3, n_feat=32, backbone=None, pretrained=True):
+def UNet(shape, n_class=3, depth=3, n_feat=32, dropout=0.3, activation='softmax', backbone=None, pretrained=True):
     """
     Create a UNet architecture
     Parameters
@@ -37,6 +60,14 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, backbone=None, pretrained=True):
         UNet number of levels (nb of encoder block or pooling layers)
     n_feat : int
         Number of features for the first encoder block (will increase and decrease according to UNet architecture)
+    dropout : float
+        Dropout ratio after convolution activation
+    activation : str or keras activation function
+        last convolution layer activation
+    backbone : None, str
+        UNet backbone, only support "vgg16" atm
+    pretrained : bool
+        Is the backbone pretrained on imagenet
     Returns
     -------
     model : tf.keras.Model
@@ -70,12 +101,16 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, backbone=None, pretrained=True):
                               padding="same")(input)
         acti1 = layers.LeakyReLU()(conv1)
         norm1 = layers.BatchNormalization()(acti1)
+        drop1 = layers.Dropout(dropout)(norm1)
+        
         conv2 = layers.ConvXD(n_feat,
                               kernel_size_conv,
-                              padding="same")(norm1)
+                              padding="same")(drop1)
         acti2 = layers.LeakyReLU()(conv2)
         norm2 = layers.BatchNormalization()(acti2)
-        return norm2
+        drop2 = layers.Dropout(dropout)(norm2)
+        
+        return drop2
 
     def encoder_block(input, n_feat=32):
         """
@@ -95,6 +130,7 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, backbone=None, pretrained=True):
         """
         skip = two_conv(input, n_feat)
         down_sample = layers.MaxPoolingXD(kernel_size_sampling)(skip)
+        
         return skip, down_sample
 
     def decoder_block(input, skip, n_feat=32):
@@ -143,8 +179,9 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, backbone=None, pretrained=True):
             current_layer = decoder_block(current_layer,
                                           skip_layer[i],
                                           n_feat * (2 ** i))
-    elif backbone == supported_backbone[0]:
-        assert depth == 4 or n_feat == 64, "UNet architecture incompatible, depth must be 4 and number of features 64."
+    elif backbone.lower() == supported_backbone[0]:
+        if depth != 4 or n_feat != 64:
+            print("Warning: UNet architecture with {} backbone will use depth = 4 and n_features = 64.".format(supported_backbone[0]))
 
         backbone_model = tf.keras.applications.VGG16(include_top=False,
                                                      weights='imagenet' if pretrained else None,
@@ -210,23 +247,14 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, backbone=None, pretrained=True):
                                           skip_layer[i],
                                           64 * (2 ** i))
     else:
-        raise Exception("Error : " + backbone + " is not supported!") 
+        raise Exception("Error : {} is not supported!".format(backbone)) 
     
-    output = None
-    if n_class == 2:
-        # sigmoid activation
-        output = layers.ConvXD(filters=n_class,
-                               kernel_size=1,
-                               padding="same",
-                               activation="sigmoid")(current_layer)
-    else:
-        # multiclass activation
-        output = layers.ConvXD(filters=n_class,
-                               kernel_size=1,
-                               padding="same",
-                               activation="softmax")(current_layer)
-    
-    model = tf.keras.Model(input, output)    
+    output = layers.ConvXD(filters=n_class,
+                           kernel_size=1,
+                           padding="same",
+                           activation=activation)(current_layer)
+
+    model = tf.keras.Model(input, output)
 
     if backbone and gray_input:
         # refer to backbone explanation in vgg16 section above for why I'm setting the weights so late
