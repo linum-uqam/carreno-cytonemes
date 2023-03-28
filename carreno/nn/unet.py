@@ -47,7 +47,8 @@ def switch_top(model, activation='softmax'):
     return tf.keras.Model(inp.input, out)
 
 
-def UNet(shape, n_class=3, depth=3, n_feat=32, dropout=0.3, activation='softmax', backbone=None, pretrained=True):
+def UNet(shape, n_class=3, depth=4, n_feat=64, dropout=0.3, batch_norm='after',
+         activation=tf.keras.activations.relu, top_activation='softmax', backbone=None, pretrained=True):
     """
     Create a UNet architecture
     Parameters
@@ -63,6 +64,8 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, dropout=0.3, activation='softmax'
     dropout : float
         Dropout ratio after convolution activation
     activation : str or keras activation function
+        Activation function after convolutions
+    top_activation : str or keras activation function
         last convolution layer activation
     backbone : None, str
         UNet backbone, only support "vgg16" atm
@@ -78,9 +81,11 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, dropout=0.3, activation='softmax'
     ndim = len(shape) - 1
     kernel_size_conv =     [3] * ndim
     kernel_size_sampling = [2] * ndim
+    batch_norm = batch_norm
     gray_input = shape[-1] == 1
     layers = carreno.nn.layers.layers(ndim)
     backbone_model = None
+    activation_fn = activation
 
     def two_conv(input, n_feat=32):
         """
@@ -96,21 +101,36 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, dropout=0.3, activation='softmax'
         __ " tf.keras.engine.keras_tensor.KerasTensor
             last keras layer output
         """
+        # https://stackoverflow.com/questions/39691902/ordering-of-batch-normalization-and-dropout
+        # See figs_and_nuts answer for layer order
+        after = batch_norm == 'after'
         conv1 = layers.ConvXD(n_feat,
                               kernel_size_conv,
                               padding="same")(input)
-        acti1 = layers.LeakyReLU()(conv1)
-        norm1 = layers.BatchNormalization()(acti1)
-        drop1 = layers.Dropout(dropout)(norm1)
         
+        if after:
+            acti1 = layers.Activation(activation_fn)(conv1)
+            drop1 = layers.Dropout(dropout)(conv1)
+            norm1 = layers.BatchNormalization()(drop1)
+        else:
+            norm1 = layers.BatchNormalization()(conv1)
+            acti1 = layers.Activation(activation_fn)(norm1)
+            drop1 = layers.Dropout(dropout)(acti1)
+
         conv2 = layers.ConvXD(n_feat,
                               kernel_size_conv,
-                              padding="same")(drop1)
-        acti2 = layers.LeakyReLU()(conv2)
-        norm2 = layers.BatchNormalization()(acti2)
-        drop2 = layers.Dropout(dropout)(norm2)
+                              padding="same")(norm1 if after else drop1)
         
-        return drop2
+        if after:
+            acti2 = layers.Activation(activation_fn)(conv2)
+            drop2 = layers.Dropout(dropout)(conv2)
+            norm2 = layers.BatchNormalization()(drop2)
+        else:
+            norm2 = layers.BatchNormalization()(conv2)
+            acti2 = layers.Activation(activation_fn)(norm2)
+            drop2 = layers.Dropout(dropout)(acti2)
+        
+        return norm2 if after else drop2
 
     def encoder_block(input, n_feat=32):
         """
@@ -252,7 +272,7 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, dropout=0.3, activation='softmax'
     output = layers.ConvXD(filters=n_class,
                            kernel_size=1,
                            padding="same",
-                           activation=activation)(current_layer)
+                           activation=top_activation)(current_layer)
 
     model = tf.keras.Model(input, output)
 

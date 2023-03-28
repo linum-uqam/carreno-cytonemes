@@ -10,7 +10,7 @@ import scipy
 # local imports
 import utils
 from carreno.io.fetcher import fetch_folder, folders_id
-from carreno.utils.util import normalize
+from carreno.utils.array import normalize
 from carreno.processing.weights import balanced_class_weights
 from carreno.processing.patches import patchify, reshape_patchify
 

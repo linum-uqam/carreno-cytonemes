@@ -57,6 +57,20 @@ def ndarray2obj(pred, angle=[0,0], prec=2):
 
 
 def figure_vol_slc(volumes, slc=20, ncol=3):
+    """
+    Show specified slice for all given volumes
+    Parameters
+    ----------
+    volumes : [array-like]
+        List of volumes
+    slc : int
+        Slice index to show from a volume (over axis 0)
+    ncol : int
+        Number of columns in resulting figure
+    Returns
+    -------
+    none
+    """
     plt.figure(figsize=(10,10))
     
     nline = np.ceil(len(volumes) / ncol).astype(int)

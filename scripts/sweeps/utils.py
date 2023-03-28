@@ -103,17 +103,20 @@ def split_patches(dir):
 
 def main():
     cf = get_config()
-    
     for k, v in cf.items():
         print(k)
         print(v)
     
     """
-    print("Patch split:")
-    for a, b, c in zip(*split_patches(cf['PATCH']['input'])):
-        print(a, b, c)
+    print()
+    trn, vld, tst = split_patches(cf['PATCH']['input'])
+    print("TRAINING")
+    print(trn)
+    print("VALIDATION")
+    print(vld)
+    print("TESTING")
+    print(tst)
     """
-
-
+    
 if __name__ == "__main__":
     main()

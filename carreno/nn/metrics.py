@@ -1,8 +1,12 @@
 # -*- coding: utf-8 -*-
 import tensorflow as tf
+import tensorflow_addons as tfa
+from keras import backend as K
+from keras import layers as KL
 from tensorflow.keras.losses import CategoricalCrossentropy
 import scipy
 import numpy as np
+from carreno.nn.soft_skeleton import soft_skel2D, soft_skel3D
 
 #-------------#
 # Coefficient #
@@ -52,6 +56,7 @@ def dice_score(smooth=1.):
 # Losses #
 #--------#
 
+
 def dice_loss(y_true, y_pred):
     """
     Dice loss between 0 (best) and 1 (worst). Best used for unbalanced dataset over IoU
@@ -89,6 +94,78 @@ def bce_dice_loss(y_true, y_pred):
     cce = CategoricalCrossentropy()
     loss = cce(y_true, y_pred) + dice_loss(y_true, y_pred)
     return loss
+
+
+focal_loss = tfa.losses.SigmoidFocalCrossEntropy(gamma=2., alpha=.25)
+
+
+def focal_bce_dice_loss(y_true, y_pred):
+    # https://arxiv.org/ftp/arxiv/papers/2209/2209.00729.pdf
+    return bce_dice_loss(y_true, y_pred) + focal_loss(y_true, y_pred)
+
+
+def dice_cldice2D_loss(iters=10, alpha=0.5):
+    """[function to compute dice+cldice loss]
+    Args:
+        iters (int, optional): [skeletonization iteration]. Defaults to 10.
+        alpha (float, optional): [weight for the cldice component]. Defaults to 0.5.
+    """
+    def loss(y_true, y_pred):
+        """[summary]
+        Args:
+            y_true ([float32]): [ground truth image]
+            y_pred ([float32]): [predicted image]
+        Returns:
+            [float32]: [loss value]
+        """
+        smooth = 1.
+        skel_pred = soft_skel2D(y_pred, iters)
+        skel_true = soft_skel2D(y_true, iters)
+        pres = (K.sum(tf.math.multiply(skel_pred, y_true))+smooth)/(K.sum(skel_pred)+smooth)    
+        rec  = (K.sum(tf.math.multiply(skel_true, y_pred))+smooth)/(K.sum(skel_true)+smooth)    
+        cl_dice = 1.- 2.0*(pres*rec)/(pres+rec)
+        dice = dice_loss(y_true, y_pred)
+        return (1.0-alpha)*dice+alpha*cl_dice
+    return loss
+
+
+def dice_cldice3D_loss(iters=10, alpha=0.5):
+    """[function to compute dice+cldice loss]
+    Args:
+        iters (int, optional): [skeletonization iteration]. Defaults to 10.
+        alpha (float, optional): [weight for the cldice component]. Defaults to 0.5.
+    """
+    def loss(y_true, y_pred):
+        """[summary]
+        Args:
+            y_true ([float32]): [ground truth image]
+            y_pred ([float32]): [predicted image]
+        Returns:
+            [float32]: [loss value]
+        """
+        smooth = 1.
+        skel_pred = soft_skel3D(y_pred, iters)
+        skel_true = soft_skel3D(y_true, iters)
+        pres = (K.sum(tf.math.multiply(skel_pred, y_true))+smooth)/(K.sum(skel_pred)+smooth)    
+        rec  = (K.sum(tf.math.multiply(skel_true, y_pred))+smooth)/(K.sum(skel_true)+smooth)    
+        cl_dice = 1.- 2.0*(pres*rec)/(pres+rec)
+        dice = dice_loss(y_true, y_pred)
+        return (1.0-alpha)*dice+alpha*cl_dice
+    return loss
+
+"""
+def dice_cldice3D_loss(iters=10, alpha=0.5):
+    def loss(y_true, y_pred):
+        smooth = 1.
+        skel_pred = soft_skel3D(y_pred, iters)
+        skel_true = soft_skel3D(y_true, iters)
+        pres = (K.sum(tf.math.multiply(skel_pred, y_true))+smooth)/(K.sum(skel_pred[:,1:,:,:,:])+smooth)    
+        rec = (K.sum(tf.math.multiply(skel_true, y_pred)[:,1:,:,:,:])+smooth)/(K.sum(skel_true[:,1:,:,:,:])+smooth)    
+        cl_dice = 1.- 2.0*(pres*rec)/(pres+rec)
+        dice = dice_loss(y_true, y_pred)
+        return (1.0-alpha)*dice+alpha*cl_dice
+    return loss
+"""
 
 
 def adap_wing_loss(theta=0.5, alpha=2.1, omega=14, epsilon=1):

@@ -1,11 +1,15 @@
 # Parent directories for data
-BASE:
+DIR:
   raw:         data/raw                    # where uncompressed data is or should be downloaded
-  output:      data/output                 # where script outputs should be
-  dataset:     data/dataset                # where data is
   psf:         data/psf                    # where psf for deconvolutions are
+  dataset:     data/dataset                # where data is
   drawing:     data/drawn_cyto             # Basile 2D drawing of cytonemes for pipeline validation
+  output:      data/output                 # where script outputs should be
+  model:       data/output/model           # where we save our models
+  graph:       data/output/graph           # where we save our graphes
+  figure:      data/output/figure          # where we save our figures
 
+# full volumes
 VOLUME:
   input:       data/dataset/input          # where labeled X inputs are
   target:      data/dataset/target         # where labeled Y inputs are
@@ -14,6 +18,7 @@ VOLUME:
   soft_weight: data/dataset/soft_weight    # where inputs soft sample weights are
   unlabeled:   data/dataset/unlabeled      # where unlabeled inputs are
 
+# patchified volumes
 PATCH:
   input:       data/dataset/input_p        # where labeled X patches are
   target:      data/dataset/target_p       # where labeled Y patches are
@@ -35,13 +40,39 @@ PREPROCESS:
     - 48      # x axis
   blur: 1.5   # sigma for gaussian blur when generating soft labels
 
-# For training
+MODEL:
+  backbone:   VGG16        # UNet backbone
+  pretrained: 1            # if encoder is pretrained on imagenet
+  dropout:    0.3          # dropout rate
+  
 TRAINING:
-  output:   data/output/model  # directory where we save our models
-  epoch:    100                # number of epoch
-  batch2D:  144                # batch size for 2D
-  batch3D:  3                  # batch size for 3D
-  patience: 10                 # number of epoch needed to trigger early stop
-  backbone:
-    - null
-    - VGG16
+  epoch:      100          # number of epoch
+  patience:   10           # early stop patience
+  batch2D:    64           # batch size for 2D
+  batch3D:    3            # batch size for 3D
+  validation:              # volumes used for validation
+    - ctrl3
+    - slik5
+  evaluation:              # volumes used for evaluation
+    - ctrl4
+    - slik6
+
+SLFSPV:
+  input:      unlabeled    # patches used for X
+  target:     unlabeled    # patches used for Y
+  weight:     unlabeled    # patches used for W
+  loss:       dice         # loss function
+  block_act:  relu         # conv activation
+  top_act:    relu         # top conv activation
+  init_lr:    0.1          # initial learning rate
+  enc_frz:    1            # if UNet encoder frozen
+
+SPV:
+  input:      input        # patches used for X
+  target:     soft_target  # patches used for Y
+  weight:     soft_weight  # patches used for W
+  loss:       dice         # loss function
+  block_act:  relu         # conv activation
+  top_act:    softmax      # top conv activation
+  init_lr:    0.1          # initial learning rate
+  enc_frz:    1            # if UNet encoder frozen

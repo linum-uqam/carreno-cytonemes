@@ -11,9 +11,11 @@ scikit-learn
 bm3d
 matplotlib
 tensorflow==2.7.0
+tensorflow-addons
 cuda-python
 patchify
 albumentations
 volumentations-3D
 pyyaml
 plantuml
+wandb
