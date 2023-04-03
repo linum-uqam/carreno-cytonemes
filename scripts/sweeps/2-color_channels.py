@@ -39,7 +39,7 @@ def training():
     input_ndim     = 4
     depth          = 4
     n_features     = 64
-    dropout        = 0.3
+    dropout        = 0.0
     batch_order    = 'after'
     activation     = tf.keras.activations.relu
     top_activation = 'softmax'

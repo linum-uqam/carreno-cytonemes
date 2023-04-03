@@ -106,6 +106,7 @@ def focal_bce_dice_loss(y_true, y_pred):
 
 def dice_cldice2D_loss(iters=10, alpha=0.5):
     """[function to compute dice+cldice loss]
+    Based on https://github.com/jocpae/clDice/blob/master/cldice_loss/keras/cldice.py
     Args:
         iters (int, optional): [skeletonization iteration]. Defaults to 10.
         alpha (float, optional): [weight for the cldice component]. Defaults to 0.5.
@@ -131,6 +132,7 @@ def dice_cldice2D_loss(iters=10, alpha=0.5):
 
 def dice_cldice3D_loss(iters=10, alpha=0.5):
     """[function to compute dice+cldice loss]
+    Based on https://github.com/jocpae/clDice/blob/master/cldice_loss/keras/cldice.py
     Args:
         iters (int, optional): [skeletonization iteration]. Defaults to 10.
         alpha (float, optional): [weight for the cldice component]. Defaults to 0.5.
@@ -152,20 +154,6 @@ def dice_cldice3D_loss(iters=10, alpha=0.5):
         dice = dice_loss(y_true, y_pred)
         return (1.0-alpha)*dice+alpha*cl_dice
     return loss
-
-"""
-def dice_cldice3D_loss(iters=10, alpha=0.5):
-    def loss(y_true, y_pred):
-        smooth = 1.
-        skel_pred = soft_skel3D(y_pred, iters)
-        skel_true = soft_skel3D(y_true, iters)
-        pres = (K.sum(tf.math.multiply(skel_pred, y_true))+smooth)/(K.sum(skel_pred[:,1:,:,:,:])+smooth)    
-        rec = (K.sum(tf.math.multiply(skel_true, y_pred)[:,1:,:,:,:])+smooth)/(K.sum(skel_true[:,1:,:,:,:])+smooth)    
-        cl_dice = 1.- 2.0*(pres*rec)/(pres+rec)
-        dice = dice_loss(y_true, y_pred)
-        return (1.0-alpha)*dice+alpha*cl_dice
-    return loss
-"""
 
 
 def adap_wing_loss(theta=0.5, alpha=2.1, omega=14, epsilon=1):
@@ -239,3 +227,36 @@ def adap_wing_loss(theta=0.5, alpha=2.1, omega=14, epsilon=1):
     loss_function.__name__ = "AdaWingLoss"
     
     return loss_function
+
+class Adaptive_Wing_Loss():
+    def __init__(self, alpha=float(2.1), omega=float(5), epsilon=float(1),theta=float(0.5)):
+        """
+        Adaptive Wing loss. Used for heatmap ground truth.
+        Code taken from :
+        # https://github.com/SerdarHelli/TensorflowWorks/blob/main/Losses/Adaptive_Wing_Loss.py
+        Parameters
+        ----------
+        alpha : float
+            Used to adapt loss shape to input shape and make loss smooth at 0 (background).
+            It needs to be slightly above 2 to maintain ideal properties.
+        omega : float
+            Multiplicating factor for non linear part of the loss.
+        epsilon : float
+            factor to avoid gradient explosion. It must not be too small
+        theta : float
+            Threshold between linear and non linear loss.
+        Returns
+        -------
+        metric_function : function
+            Function to calculate Dice score between target and prediction
+        """
+        self.alpha=alpha
+        self.omega=omega
+        self.epsilon=epsilon
+        self.theta=theta
+
+    def Loss(self,y_true,y_pred):
+        A = self.omega * (1/(1+(self.theta/self.epsilon)**(self.alpha-y_true)))*(self.alpha-y_true)*((self.theta/self.epsilon)**(self.alpha-y_true-1))/self.epsilon
+        C = self.theta*A - self.omega*tf.math.log(1+(self.theta/self.epsilon)**(self.alpha-y_true))
+        loss=tf.where(tf.math.greater_equal(tf.math.abs(y_true-y_pred), self.theta),A*tf.math.abs(y_true-y_pred) - C,self.omega*tf.math.log(1+tf.math.abs((y_true-y_pred)/self.epsilon)**(self.alpha-y_true)))
+        return tf.reduce_mean(loss)

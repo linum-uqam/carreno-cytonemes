@@ -16,16 +16,16 @@ from carreno.nn.generators import get_volumes_slices, volume_generator, volume_s
 sweep_config = {
     'method': 'grid',
     'name':   'sweep',
-    'project': 'unet2d_soft_loss',
+    'project': 'unet2d_loss',
     'metric': {
         'goal': 'maximize',
         'name': 'val_dice'
     },
     'parameters': {
-        'loss': {'values': ["cldice"]}
+        'loss': {'values': ["dice", "bce_dice", "focal", "focal_bce_dice", "cldice"]}
     }
 }
-#"dice", "bce_dice", "focal", "focal_bce_dice", 
+
 config = utils.get_config()
 
 def training():
@@ -39,7 +39,7 @@ def training():
     input_ndim     = 4
     depth          = 4
     n_features     = 64
-    dropout        = 0.3
+    dropout        = 0.0
     batch_order    = 'after'
     activation     = 'relu'
     top_activation = 'softmax'
@@ -74,8 +74,8 @@ def training():
     trn, vld, tst = utils.split_patches(config['PATCH']['input'])
     fullpath = lambda dir, files : [os.path.join(dir, name) for name in files]
     x_train = fullpath(config['PATCH']['input'],  trn)
-    y_train = fullpath(config['PATCH']['soft_target'], trn)
-    w_train = fullpath(config['PATCH']['soft_weight'], trn)
+    y_train = fullpath(config['PATCH']['target'], trn)
+    w_train = fullpath(config['PATCH']['weight'], trn)
     x_valid = fullpath(config['PATCH']['input'],  vld)
     y_valid = fullpath(config['PATCH']['target'], vld)
     x_test  = fullpath(config['PATCH']['input'],  tst)
@@ -224,7 +224,7 @@ def training():
 
 def main():
     sweep_id = wandb.sweep(sweep_config)
-    wandb.agent(sweep_id, function=training)  
+    wandb.agent(sweep_id, function=training)
 
 
 if __name__ == "__main__":

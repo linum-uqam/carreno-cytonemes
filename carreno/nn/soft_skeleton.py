@@ -1,8 +1,11 @@
+#
+# Code adapted from https://github.com/jocpae/clDice/blob/master/cldice_loss/keras/soft_skeleton.py
+#
+
 from keras import layers as KL
 from keras import backend as K
 import numpy as np
 import tensorflow as tf
-
 
 def soft_erode2D(img):
     """[This function performs soft-erosion operation on a float32 image]
@@ -21,10 +24,8 @@ def soft_erode3D(img):
     Returns:
         [float32]: [the eroded image]
     """
-    p1 = -KL.MaxPool3D(pool_size=(3, 3, 1), strides=(1, 1, 1), padding='same', data_format=None)(-img)
-    p2 = -KL.MaxPool3D(pool_size=(3, 1, 3), strides=(1, 1, 1), padding='same', data_format=None)(-img)
-    p3 = -KL.MaxPool3D(pool_size=(1, 3, 3), strides=(1, 1, 1), padding='same', data_format=None)(-img)
-    return tf.math.minimum(tf.math.minimum(p1, p2), p3)
+    # changed to 3x3x3 to be compatible with dilation
+    return -KL.MaxPool3D(pool_size=(3, 3, 3), strides=(1, 1, 1), padding='same', data_format=None)(-img)
 
 
 def soft_dilate2D(img):
