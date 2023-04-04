@@ -2,7 +2,8 @@
 import numpy as np
 
 def normalize(x, minv=0, maxv=1):
-    """Normalize array between given range
+    """
+    Normalize array between given range
     Parameters
     ----------
     x : list, ndarray
@@ -20,6 +21,23 @@ def normalize(x, minv=0, maxv=1):
     y = y + (0 - y.min())
     y = y / y.max()
     return y * (maxv - minv) + minv
+
+
+def standardize(x):
+    """
+    Standardize array
+    Parameters
+    ----------
+    x : list ndarray
+    Returns
+    -------
+    y : ndarray
+        standardize x with dtype float32
+    """
+    mean = x.mean()
+    std = x.std()
+    y = x - mean / std
+    return y
 
 
 def euclidean_dist(coord1, coord2=0, dist=None):
