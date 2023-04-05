@@ -81,8 +81,8 @@ class Compose(Transform):
             Transformed weight
         """
         xyw = [x.copy(),
-               y if y is None else y.copy(),
-               w if w is None else w.copy()]
+               None if y is None else y.copy(),
+               None if w is None else w.copy()]
         for tf in self.transforms:
             xyw = tf(*xyw)
         return xyw
@@ -221,7 +221,7 @@ class Sample(Transform):
             chosen_one = rnd.randint(*options_range)
             slices.append(slice(chosen_one, chosen_one + sample_len))
         slices = tuple(slices)
-        return x[slices], None if y is None else y[slices], None if w is None else w[slices]
+        return [None if i is None else i[slices] for i in (x,y,w)]
 
 
 class Normalize(Transform):
