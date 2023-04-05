@@ -117,22 +117,48 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
     import numpy as np
 
-    cube = np.zeros((10, 10, 10, 3))
-    cube[3:-3, 3:-3, 3:-3] = [0, 1, 0]
-    cube[:3]        = [1, 0, 0]
-    cube[-3:]       = [1, 0, 0]
-    cube[:, :3]     = [1, 0, 0]
-    cube[:, -3:]    = [1, 0, 0]
-    cube[:, :, :3]  = [1, 0, 0]
-    cube[:, :, -3:] = [1, 0, 0]
-    cube_tensor = tf.expand_dims(tf.convert_to_tensor(cube), 0)
-    print("tensor shape", cube_tensor.shape)
+    cube = np.zeros((25, 25, 25, 3))
+    cube[5:-5, 5:-5, 5:-5] = [0, 1, 0]
+    cube[:5]        = [1, 0, 0]
+    cube[-5:]       = [1, 0, 0]
+    cube[:, :5]     = [1, 0, 0]
+    cube[:, -5:]    = [1, 0, 0]
+    cube[:, :, :5]  = [1, 0, 0]
+    cube[:, :, -5:] = [1, 0, 0]
+    cube_tensor = tf.expand_dims(tf.convert_to_tensor(cube, dtype=tf.float32), 0)
 
-    l, c = 2, 3
-    n = 4
-    plt.subplot(l, c, 1)
-    plt.imshow(cube[n])
-    plt.subplot(l, c, 2)
-    plt.imshow(soft_erode3D(cube_tensor).numpy()[0,n])
-    plt.show()
+    n = 12
 
+    def __plt_skel(img, iters, n):
+        img1 = soft_open3D(img)
+        skel = tf.nn.relu(img-img1)
+
+        for j in range(iters):
+            plt.subplot(151)
+            plt.title('erosion')
+            img = soft_erode3D(img)
+            plt.imshow(img.numpy()[0,n])
+
+            plt.subplot(152)
+            plt.title('opening')
+            img1 = soft_open3D(img)
+            plt.imshow(img1.numpy()[0,n])
+
+            plt.subplot(153)
+            plt.title('delta')
+            delta = tf.nn.relu(img-img1)
+            plt.imshow(delta.numpy()[0,n])
+
+            plt.subplot(154)
+            plt.title('intersection')
+            intersect = tf.math.multiply(skel, delta)
+            plt.imshow(intersect.numpy()[0,n])
+
+            plt.subplot(155)
+            plt.title('skeleton')
+            skel += tf.nn.relu(delta-intersect)
+            plt.imshow(skel.numpy()[0,n])
+            
+            plt.show()
+
+    __plt_skel(cube_tensor, 15, n)
