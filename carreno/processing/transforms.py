@@ -402,7 +402,7 @@ class Flip(Transform):
     
 
 class Rotate(Transform):
-    def __init__(self, degrees, axes=(0,1), mode="constant", cval=0, **kwargs):
+    def __init__(self, degrees, axes=(0,1), order=1, mode="constant", cval=0, **kwargs):
         """
         Rotate 2D or 3D data on axis.
         Parameters
@@ -412,6 +412,9 @@ class Rotate(Transform):
         axes : int
             Pair of axis to rotate on
             Refer to axes param at https://docs.scipy.org/doc/scipy/reference/generated/scipy.ndimage.rotate.html
+        order : int
+            The order of interpolation. Between 0-5.
+            Refer to order param at https://scikit-image.org/docs/stable/api/skimage.transform.html#skimage.transform.warp
         mode : str, function
             Padding type. Recommend 'reflect', 'constant' or 'nearest'
             Refer to mode param at https://docs.scipy.org/doc/scipy/reference/generated/scipy.ndimage.rotate.html
@@ -422,6 +425,7 @@ class Rotate(Transform):
         super().__init__(**kwargs)
         self.degrees = degrees
         self.axes    = axes
+        self.order   = order
         self.mode    = mode
         self.cval    = cval
 
@@ -446,7 +450,13 @@ class Rotate(Transform):
             Rotated weight
         """
         angle = rnd.uniform(*self.degrees)
-        return [None if i is None else nd.rotate(i, angle=angle, axes=self.axes, reshape=False, mode=self.mode, cval=self.cval) for i in (x,y,w)]
+        return [None if i is None else nd.rotate(input=i,
+                                                 angle=angle,
+                                                 axes=self.axes,
+                                                 reshape=False,
+                                                 order=self.order,
+                                                 mode=self.mode,
+                                                 cval=self.cval) for i in (x,y,w)]
 
 
 class Round(Transform):
@@ -629,7 +639,7 @@ if __name__ == "__main__":
             array = np.zeros((2,2,2))
             array[0,0,0] = 1
             a, b, c = [array.copy()] * 3
-            tf_a, tf_b, tf_c = Compose([Rotate(degrees=[90,90], axes=(1,2)), Round(decimals=5)])(a, b, c)
+            tf_a, tf_b, tf_c = Compose([Rotate(degrees=[90,90], axes=(1,2), order=3), Round(decimals=5)])(a, b, c)
             tf_array = np.zeros((2,2,2))
             tf_array[0,1,0] = 1
 
