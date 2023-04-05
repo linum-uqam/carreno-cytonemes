@@ -40,8 +40,9 @@ class Transform:
         w : array-like, None
             Possibly transformed weight
         """
+        xyw = x, y, w
         if self.p == 1 or rnd.random() < self.p:  # if we put rnd <= p, p=0 could be applied
-            xyw = self.apply(x, y, w)                # if we put rnd <  p, p=1 could be not applied
+            xyw = self.apply(*xyw)                # if we put rnd <  p, p=1 could be not applied
         return xyw
     
     def apply(self, x, y=None, w=None):
@@ -406,8 +407,8 @@ class Rotate(Transform):
         Rotate 2D or 3D data on axis.
         Parameters
         ----------
-        degrees : float
-            maximum angle of rotation
+        degrees : [float, float]
+            mininum to maximum angle of rotation
         axes : int
             Pair of axis to rotate on
             Refer to axes param at https://docs.scipy.org/doc/scipy/reference/generated/scipy.ndimage.rotate.html
@@ -419,8 +420,8 @@ class Rotate(Transform):
             Refer to cval param at https://docs.scipy.org/doc/scipy/reference/generated/scipy.ndimage.rotate.html
         """
         super().__init__(**kwargs)
-        self.axes    = [0,1] if axes == 0 else [0,2] if axes == 1 else [1,2]
-        self.degrees = abs(degrees) % 360
+        self.degrees = degrees
+        self.axes    = axes
         self.mode    = mode
         self.cval    = cval
 
@@ -444,12 +445,47 @@ class Rotate(Transform):
         w : array-like, None
             Rotated weight
         """
-        angle = rnd.uniform(-self.degrees, self.degrees)
+        angle = rnd.uniform(*self.degrees)
         return [None if i is None else nd.rotate(i, angle=angle, axes=self.axes, reshape=False, mode=self.mode, cval=self.cval) for i in (x,y,w)]
 
 
+class Round(Transform):
+    def __init__(self, decimals, **kwargs):
+        """
+        Round data.
+        Parameters
+        ----------
+        decimals : int
+            Number of decimal to keep
+        """
+        super().__init__(**kwargs)
+        self.decimals = decimals
+    
+    def apply(self, x, y=None, w=None):
+        """
+        Round data.
+        Parameters
+        ----------
+        x : array-like
+            Input
+        y : array-like, None
+            Target
+        w : array-like, None
+            Weight
+        Returns
+        -------
+        x : array-like
+            Rounded input
+        y : array-like, None
+            Rounded target
+        w : array-like, None
+            Rounded weight
+        """
+        return [None if i is None else np.round(i, self.decimals) for i in (x,y,w)]
+
+
 class Tensor(Transform):
-    def __init__(**kwargs):
+    def __init__(self, **kwargs):
         """
         Convert ndarray to tensor.
         """
@@ -475,34 +511,142 @@ class Tensor(Transform):
         w : array-like, None
             Weight tensor
         """
-        return [None if i is None else tf.convert_to_tensor for i in (x,y,w)]
+        return [None if i is None else tf.convert_to_tensor(i) for i in (x,y,w)]
 
 
 if __name__ == "__main__":
-    import matplotlib.pyplot as plt
+    import tempfile
+    import unittest
 
-    x, y, w = np.meshgrid(range(100), range(100), range(100))
-    y = np.stack([y]*3, axis=-1)
-    y[:, 20:-20, 45:55] = [100,0,0]
+    class TestTransforms(unittest.TestCase):        
+        def test_transform(self):
+            abc = (0,0,0)
+            with self.assertRaises(NotImplementedError):
+                Transform(p=1)(0, 0, 0)
+            self.assertEqual((0, 0, 0), Transform(p=0)(0, 0, 0))
+        
+        def test_compose(self):
+            a, b, c = tuple((np.zeros((1,1,1,1)))) * 3
+            tf_a, tf_b, tf_c = Compose([Squeeze(axis=0), Squeeze(axis=0), Squeeze(axis=0)])(a, b, c)
+            self.assertTrue((a == tf_a).all())
+            self.assertTrue((b == tf_b).all())
+            self.assertTrue((c == tf_c).all())
 
-    plt.subplot(221)
-    plt.imshow(x[-1], cmap='gray')
-    plt.subplot(222)
-    plt.imshow(y[-1])
-    
-    tfs = Compose([
-        Rotate(axes=[1,2], degrees=45),
-        Sample((1,75,75)),
-        Squeeze(axis=0),
-        Normalize(),
-    ])
+        def test_read(self):
+            a, b, c = [np.ones((2,2,2))], [np.ones((2,2,2,3))], [np.ones((2,2,2))]
+            input_dir = tempfile.TemporaryDirectory()
+            input_paths = [input_dir.name + "/{}.tif".format(i) for i in ['a']]
 
-    x, y, w = tfs(x, y)
-    
-    print(x)
+            label_dir = tempfile.TemporaryDirectory()
+            label_paths = [label_dir.name + "/{}.tif".format(i) for i in ['b']]
 
-    plt.subplot(223)
-    plt.imshow(x, cmap='gray', vmin=0, vmax=1)
-    plt.subplot(224)
-    plt.imshow(y, vmin=0, vmax=100)
-    plt.show()
+            weight_dir = tempfile.TemporaryDirectory()
+            weight_paths = [weight_dir.name + "/{}.tif".format(i) for i in ['c']]
+
+            # inputs and weights
+            for path, volume in zip(input_paths + weight_paths, [a, c]):
+                tif.imwrite(path, volume, photometric='minisblack')
+
+            # labels
+            for path, volume in zip(label_paths, [b]):
+                tif.imwrite(path, volume, photometric='rgb')
+            
+            tf_a, tf_b, tf_c = Read()(input_paths[0], label_paths[0], weight_paths[0])
+            self.assertTrue((a == tf_a).all())
+            self.assertTrue((b == tf_b).all())
+            self.assertTrue((c == tf_c).all())
+            
+            # cleanup dataset before raising exception
+            input_dir.cleanup()
+            label_dir.cleanup()
+            weight_dir.cleanup()
+
+        def test_pad(self):
+            a, b, c = [np.ones((3,4,5))] * 3
+            tf_a, tf_b, tf_c = PadResize(shape=[5,5,5])(a, b, c)
+            
+            self.assertEqual((5, 5, 5), tf_a.shape)
+            self.assertEqual((5, 5, 5), tf_b.shape)
+            self.assertEqual((5, 5, 5), tf_c.shape)
+
+            self.assertEqual(a.sum(), tf_a.sum())
+            self.assertEqual(b.sum(), tf_b.sum())
+            self.assertEqual(c.sum(), tf_c.sum())
+
+        def test_sample(self):
+            a, b, c = [np.ones((5,5,5))] * 3
+            tf_a, tf_b, tf_c = Sample(shape=[3,4,5])(a, b, c)
+
+            self.assertEqual((3, 4, 5), tf_a.shape)
+            self.assertEqual((3, 4, 5), tf_b.shape)
+            self.assertEqual((3, 4, 5), tf_c.shape)
+
+        def test_normalize(self):
+            a, b, c = [np.arange(3)] * 3
+            tf_a, tf_b, tf_c = Normalize(-1, 1)(a, b, c)
+                       
+            self.assertTrue((a - 1 == tf_a).all())
+            self.assertTrue((b == tf_b).all())
+            self.assertTrue((c == tf_c).all())
+        
+        def test_standardize(self):
+            a, b, c = [np.arange(3)] * 3
+            tf_a, tf_b, tf_c = Standardize()(a, b, c)
+                       
+            self.assertTrue((a != tf_a).all())
+            self.assertTrue((b == tf_b).all())
+            self.assertTrue((c == tf_c).all())
+        
+        def test_squeeze(self):
+            a, b, c = [np.ones((1,3,3))] * 3
+            tf_a, tf_b, tf_c = Squeeze(axis=0)(a, b, c)
+                       
+            self.assertTrue((a[0] == tf_a).all())
+            self.assertTrue((b[0] == tf_b).all())
+            self.assertTrue((c[0] == tf_c).all())
+        
+        def test_stack(self):
+            a, b, c = [np.ones((1,3,3))] * 3
+            tf_a, tf_b, tf_c = Stack(axis=-1, n=1)(a, b, c)
+                       
+            self.assertTrue((np.expand_dims(a, axis=-1) == tf_a).all())
+            self.assertTrue((b == tf_b).all())
+            self.assertTrue((c == tf_c).all())
+        
+        def test_flip(self):
+            array = np.zeros((2,2,2))
+            array[0,0,0] = 1
+            a, b, c = [array.copy()] * 3
+            tf_a, tf_b, tf_c = Compose([Flip(axis=0), Flip(axis=1), Flip(axis=2)])(a, b, c)
+            tf_array = np.zeros((2,2,2))
+            tf_array[-1,-1,-1] = 1
+
+            self.assertTrue((tf_array == tf_a).all())
+            self.assertTrue((tf_array == tf_b).all())
+            self.assertTrue((tf_array == tf_c).all())
+        
+        def test_rotate(self):
+            array = np.zeros((2,2,2))
+            array[0,0,0] = 1
+            a, b, c = [array.copy()] * 3
+            tf_a, tf_b, tf_c = Compose([Rotate(degrees=[90,90], axes=(1,2)), Round(decimals=5)])(a, b, c)
+            tf_array = np.zeros((2,2,2))
+            tf_array[0,1,0] = 1
+
+            self.assertTrue((tf_array == tf_a).all())
+            self.assertTrue((tf_array == tf_b).all())
+            self.assertTrue((tf_array == tf_c).all())
+
+        def test_tensor(self):
+            a, b, c = [np.ones((3,4,5))] * 3
+            tf_a, tf_b, tf_c = Tensor()(a, b, c)
+            
+            self.assertTrue((a.shape == tf_a.shape))
+            self.assertTrue((b.shape == tf_b.shape))
+            self.assertTrue((c.shape == tf_c.shape))
+
+            self.assertIsInstance(tf_a, tf.Tensor)
+            self.assertIsInstance(tf_b, tf.Tensor)
+            self.assertIsInstance(tf_c, tf.Tensor)
+            
+    unittest.main()

@@ -4,7 +4,7 @@ import numpy as np
 from sklearn.utils import shuffle
 
 
-class VolumeGenerator(tf.keras.utils.Sequence):
+class Generator(tf.keras.utils.Sequence):
     def __init__(self, vol, label, weight=None, size=1, augmentation=None, shuffle=True):
         """
         Data generator.
@@ -67,14 +67,14 @@ if __name__ == '__main__':
     import unittest
     import carreno.processing.transforms as tfs
 
-    class TestStringMethods(unittest.TestCase):
+    class TestGenerator(unittest.TestCase):
         x, y, w = np.meshgrid(range(5), range(5), range(5))
         
         def test_init(self):
             a, b = self.__class__.x, self.__class__.y
             aug = tfs.Compose([])
             n = 2
-            gen = VolumeGenerator([a]*n, [b]*n, None, size=n, augmentation=aug)
+            gen = Generator([a]*n, [b]*n, None, size=n, augmentation=aug)
 
             batch = next(iter(gen))
             data = batch[0]
@@ -92,7 +92,7 @@ if __name__ == '__main__':
                 tfs.Squeeze(axis=0),
                 tfs.Stack(axis=-1, n=1)
             ])
-            gen2D = VolumeGenerator([a], [b], [c], size=1, augmentation=aug2D)
+            gen2D = Generator([a], [b], [c], size=1, augmentation=aug2D)
 
             batch = next(iter(gen2D))
             data = batch[0]
@@ -110,7 +110,7 @@ if __name__ == '__main__':
                 tfs.Sample([5,5,5]),
                 tfs.Stack(axis=-1, n=n)
             ])
-            gen3D = VolumeGenerator([a], [b], [c], size=1, augmentation=aug3D)
+            gen3D = Generator([a], [b], [c], size=1, augmentation=aug3D)
 
             batch = next(iter(gen3D))
             data = batch[0]
