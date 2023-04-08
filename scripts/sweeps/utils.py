@@ -92,27 +92,38 @@ def split_dataset(dir):
     return train, valid, test
 
 
-def augmentations(shape, is_2D, n_color_ch):
+def augmentations(shape, norm_or_std, is_2D, n_color_ch):
     """
     Get augmentations for training and test data.
     Parameters
     ----------
     shape : [int]
         Shape of data sample.
+    norm_or_std : bool
+        True for normalisation, False for standardization.
     is_2D : bool
-        If the data is 2D or not
+        If the data is 2D or not.
     n_color_ch : int
         Number of color channel for X data.
+    Returns
+    -------
+    train_aug : carreno.processing.transforms.Compose
+        List of transformations
+    test_aug : carreno.processing.transforms.Compose
+        List of transformations
     """
+    scaler = tfs.Normalize() if norm_or_std else tfs.Standardize()
+    squeeze_p = (1 if is_2D else 0)
+
     train_aug = tfs.Compose(transforms=[
         tfs.Read(),
         tfs.PadResize(shape=shape, mode='reflect'),
         tfs.Sample(shape=shape),
-        tfs.Normalize(),
+        scaler,
         tfs.Flip(axis=1, p=0.5),
         tfs.Flip(axis=2, p=0.5),
         tfs.Rotate([-30, 30], axes=[1,2], order=1, mode='reflect', p=0.5),
-        tfs.Squeeze(axis=0, p=(1 if is_2D else 0)),
+        tfs.Squeeze(axis=0, p=squeeze_p),
         tfs.Stack(axis=-1, n=n_color_ch)
     ])
     
@@ -120,8 +131,8 @@ def augmentations(shape, is_2D, n_color_ch):
         tfs.Read(),
         tfs.PadResize(shape=shape, mode='reflect'),
         tfs.Sample(shape=shape),
-        tfs.Standardize(),
-        tfs.Squeeze(axis=0, p=(1 if is_2D else 0)),
+        scaler,
+        tfs.Squeeze(axis=0, p=squeeze_p),
         tfs.Stack(axis=-1, n=n_color_ch)
     ])
     

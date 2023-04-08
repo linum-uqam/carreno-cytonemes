@@ -2,16 +2,15 @@
 import tensorflow as tf
 import wandb
 import os
+import numpy as np
 from pathlib import Path
-import albumentations as A
-import volumentations as V
 
 # local imports
 import utils
 from carreno.nn.unet import UNet
 import carreno.nn.metrics as mtc
 from carreno.nn.unet import encoder_trainable, switch_top
-from carreno.nn.generators import get_volumes_slices, volume_generator, volume_slice_generator
+from carreno.nn.generators import Generator
 
 sweep_config = {
     'method': 'grid',
@@ -22,7 +21,7 @@ sweep_config = {
         'name': 'val_dice'
     },
     'parameters': {
-        'lr': {0.01, 0.001, 0.0001},
+        'lr': {'values': [0.01, 0.001, 0.0001]},
         'activation': {'values': ["relu", "leaky_relu", "elu", "gelu"]},
         'loss': {'values': ["dice", "bce_dice", "cldice"]}
     }
@@ -45,17 +44,18 @@ def training():
     batch_order    = 'after'
     activation     = wandb.config.activation
     top_activation = 'softmax'
-    backbone       = 'vgg16'
-    n_color_ch     = 3
-    pretrained     = True
+    backbone       = None
+    n_color_ch     = 1
+    pretrained     = False
     loss           = wandb.config.loss
     LR             = wandb.config.lr
+    batch_size     = config['TRAINING']['batch2D' if input_ndim == 4 else 'batch3D']
 
     # must add color channel to grayscale
     is_2D = input_ndim == 4
-    input_shape = config['PREPROCESS']['patch'][5 - input_ndim:] + [n_color_ch]
+    input_shape = config['PREPROCESS']['patch'][5 - input_ndim:]
     
-    model = UNet(shape=input_shape,
+    model = UNet(shape=input_shape + [n_color_ch],
                  n_class=config['PREPROCESS']['n_cls'],
                  depth=depth,
                  n_feat=n_features,
@@ -66,97 +66,56 @@ def training():
                  backbone=backbone,
                  pretrained=pretrained)
     
-    encoder_trainable(model, False)
-
     model.summary()
 
     print("###############")
     print("# DATA LOADER #")
     print("###############")
 
-    trn, vld, tst = utils.split_patches(config['PATCH']['input'])
-    fullpath = lambda dir, files : [os.path.join(dir, name) for name in files]
-    x_train = fullpath(config['PATCH']['input'],  trn)
-    y_train = fullpath(config['PATCH']['target'], trn)
-    w_train = fullpath(config['PATCH']['weight'], trn)
-    x_valid = fullpath(config['PATCH']['input'],  vld)
-    y_valid = fullpath(config['PATCH']['target'], vld)
-    x_test  = fullpath(config['PATCH']['input'],  tst)
-    y_test  = fullpath(config['PATCH']['target'], tst)
-
-    if is_2D:
-        # slice up volumes for img
-        x_train = get_volumes_slices(x_train)
-        y_train = get_volumes_slices(y_train)
-        w_train = get_volumes_slices(w_train)
-        x_valid = get_volumes_slices(x_valid)
-        y_valid = get_volumes_slices(y_valid)
-        x_test  = get_volumes_slices(x_test)
-        y_test  = get_volumes_slices(y_test)
+    trn, vld, tst = utils.split_dataset(config['VOLUME']['input'])
+    fullpath = lambda dir, files : [os.path.join(dir, name) for name in files] * batch_size
+    x_train = fullpath(config['VOLUME']['input'],  trn)
+    y_train = fullpath(config['VOLUME']['target'], trn)
+    w_train = fullpath(config['VOLUME']['weight'], trn)
+    x_valid = fullpath(config['VOLUME']['input'],  vld)
+    y_valid = fullpath(config['VOLUME']['target'], vld)
+    x_test  = fullpath(config['VOLUME']['input'],  tst)
+    y_test  = fullpath(config['VOLUME']['target'], tst)
 
     print("Training dataset")
-    if is_2D:
-        print("-nb of volumes :",
-              [j for i, j in x_train].count(0), "/",
-              [j for i, j in y_train].count(0), "/",
-              [j for i, j in w_train].count(0))
     print("-nb of instances :", len(x_train), "/", len(y_train), "/", len(w_train))
     
     print("Validation dataset")
-    if is_2D:
-        print("-nb of volumes :",
-              [j for i, j in x_valid].count(0), "/",
-              [j for i, j in y_valid].count(0))
     print("-nb of instances :", len(x_valid), "/", len(y_valid))
     
     print("Testing dataset")
-    if is_2D:
-        print("-nb of volumes :",
-              [j for i, j in x_test].count(0), "/",
-              [j for i, j in y_test].count(0))
     print("-nb of instances :", len(x_test), "/",  len(y_test))
 
     # setup data augmentation
-    aug = None
-    if is_2D:
-        aug = A.Compose([
-            A.Rotate(limit=45, interpolation=1, border_mode=4, p=0.25),
-            A.RandomRotate90((1, 2), p=0.25),
-            A.Flip(0, p=0.25),
-            A.Flip(1, p=0.25)
-        ], additional_targets={"weight":"mask"}, p=1)
-    else:
-        aug = V.Compose([
-            V.Rotate((-45, 45), (0,0), (0, 0), border_mode='reflect', p=0.25),
-            V.RandomRotate90((1, 2), p=0.25),
-            V.Flip(0, p=0.25),
-            V.Flip(1, p=0.25)
-        ], targets=[['image','mask','weight']], p=1)
+    train_aug, test_aug = utils.augmentations(shape=([1] if is_2D else []) + input_shape,
+                                              norm_or_std=1,
+                                              is_2D=is_2D,
+                                              n_color_ch=n_color_ch)
 
     # ready up the data generators
-    batch_size = config['TRAINING']['batch2D' if is_2D else 'batch3D']
-    generator_fn = volume_slice_generator if is_2D else volume_generator
-    train_gen = generator_fn(x_train,
-                             y_train,
-                             weight=w_train,
-                             size=batch_size,
-                             augmentation=aug,
-                             nb_color_ch=n_color_ch,
-                             shuffle=True)
-    valid_gen = generator_fn(x_valid,
-                             y_valid,
-                             weight=None,  # not used for validation since it would cause a bias on best saved model
-                             size=batch_size,
-                             augmentation=None,
-                             nb_color_ch=n_color_ch,
-                             shuffle=True)  # I'm kind of torn on putting shuffle on validation data, but otherwise, the extra patches are never used  
-    test_gen  = generator_fn(x_test,
-                             y_test,
-                             weight=None,
-                             size=batch_size,
-                             augmentation=None,
-                             nb_color_ch=n_color_ch,
-                             shuffle=False)
+    train_gen = Generator(x_train,
+                          y_train,
+                          weight=w_train,
+                          size=batch_size,
+                          augmentation=train_aug,
+                          shuffle=True)
+    valid_gen = Generator(x_valid,
+                          y_valid,
+                          weight=None,   # not used for validation since it would cause a bias on best saved model
+                          size=batch_size,
+                          augmentation=test_aug,
+                          shuffle=True)  # I'm kind of torn on putting shuffle on validation data, but otherwise, the extra patches are never used  
+    test_gen  = Generator(x_test,
+                          y_test,
+                          weight=None,
+                          size=batch_size,
+                          augmentation=test_aug,
+                          shuffle=False)
 
     print("############")
     print("# TRAINING #")
@@ -180,7 +139,7 @@ def training():
                                                         save_weights_only=False,
                                                         verbose=1)
     metrics_logger   = wandb.keras.WandbMetricsLogger()
-    
+
     total_steps = len(train_gen) * config['TRAINING']['epoch']
     schedule = tf.keras.optimizers.schedules.CosineDecay(LR, decay_steps=total_steps)
     optim = tf.keras.optimizers.Adam(learning_rate=schedule)

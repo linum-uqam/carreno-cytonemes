@@ -630,7 +630,14 @@ if __name__ == "__main__":
             a, b, c = [np.ones((1,3,3))] * 3
             tf_a, tf_b, tf_c = Stack(axis=-1, n=1)(a, b, c)
                        
+            # 1 channel
             self.assertTrue((np.expand_dims(a, axis=-1) == tf_a).all())
+            self.assertTrue((b == tf_b).all())
+            self.assertTrue((c == tf_c).all())
+
+            # multiple channel
+            tf_a, tf_b, tf_c = Stack(axis=-1, n=3)(a, b, c)
+            self.assertTrue((a == tf_a).all(axis=1).all())
             self.assertTrue((b == tf_b).all())
             self.assertTrue((c == tf_c).all())
         

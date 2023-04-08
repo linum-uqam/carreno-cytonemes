@@ -90,6 +90,7 @@ def training():
 
     # setup data augmentation
     train_aug, test_aug = utils.augmentations(shape=([1] if is_2D else []) + input_shape,
+                                              norm_or_std=1,
                                               is_2D=is_2D,
                                               n_color_ch=n_color_ch)
 
@@ -166,10 +167,10 @@ def training():
     results = model.evaluate(test_gen, return_dict=True, verbose=1)
     wandb.log(results)
 
+
 def main():
     sweep_id = wandb.sweep(sweep_config)
     wandb.agent(sweep_id, function=training)
-    training()
 
 
 if __name__ == "__main__":
