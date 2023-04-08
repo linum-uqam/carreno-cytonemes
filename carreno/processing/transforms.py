@@ -81,9 +81,9 @@ class Compose(Transform):
         w : array-like, None
             Transformed weight
         """
-        xyw = [x.copy(),
-               None if y is None else y.copy(),
-               None if w is None else w.copy()]
+        xyw = [x,
+               None if y is None else y,
+               None if w is None else w]
         for tf in self.transforms:
             xyw = tf(*xyw)
         return xyw
@@ -130,14 +130,10 @@ class PadResize(Transform):
         mode : str, function
             Padding type.
             Refer to mode param at https://numpy.org/doc/stable/reference/generated/numpy.pad.html
-        cval : __
-            Value for constant padding.
-            Refer to constant_values param at https://numpy.org/doc/stable/reference/generated/numpy.pad.html
         """
         super().__init__(**kwargs)
         self.shape = np.array(shape)
         self.mode  = mode
-        self.cval = cval
 
     def apply(self, x, y=None, w=None):
         """
@@ -152,11 +148,11 @@ class PadResize(Transform):
             Weight
         Returns
         -------
-        x : array-like
+        x_pad : array-like
             Padded input
-        y : array-like, None
+        y_pad : array-like, None
             Padded target
-        w : array-like, None
+        w_pad : array-like, None
             Padded weight
         """
         ndim_to_transform = self.shape.shape[0]
@@ -166,13 +162,18 @@ class PadResize(Transform):
         if not w is None:
             assert x.shape[:ndim_to_transform] == w.shape[:ndim_to_transform], \
                 "Data shape conflict, got x={}, w={}".format(x.shape[:ndim_to_transform], w.shape[:ndim_to_transform])
-        padding = [[0,0]] * x.ndim
+        x_pad_width = [[0,0]] * x.ndim
         for i in range(len(self.shape)):
             diff = x.shape[i] - self.shape[i]
             if diff < 0:
                 split = abs(diff) / 2
-                padding[i] = [int(i) for i in [np.floor(split), np.ceil(split)]]
-        return [None if i is None else np.pad(i, pad_width=padding, mode=self.mode, constant_values=self.cval) for i in (x,y,w)]
+                x_pad_width[i] = [int(i) for i in [np.floor(split), np.ceil(split)]]
+        
+        x_pad = np.pad(x, pad_width=x_pad_width, mode=self.mode)
+        y_pad = None if y is None else np.pad(y, pad_width=x_pad_width + [[0, 0]] * (y.ndim - x.ndim), mode=self.mode)
+        w_pad = None if w is None else np.pad(w, pad_width=x_pad_width[:w.ndim], mode=self.mode)
+
+        return x_pad, y_pad, w_pad
 
 
 class Sample(Transform):
@@ -528,7 +529,7 @@ if __name__ == "__main__":
     import tempfile
     import unittest
 
-    class TestTransforms(unittest.TestCase):        
+    class TestTransforms(unittest.TestCase):
         def test_transform(self):
             abc = (0,0,0)
             with self.assertRaises(NotImplementedError):
@@ -582,6 +583,16 @@ if __name__ == "__main__":
             self.assertEqual(a.sum(), tf_a.sum())
             self.assertEqual(b.sum(), tf_b.sum())
             self.assertEqual(c.sum(), tf_c.sum())
+
+            tf_a, tf_b, tf_c = PadResize(shape=[5,5,5], mode='reflect')(a, b, c)
+            
+            self.assertEqual((5, 5, 5), tf_a.shape)
+            self.assertEqual((5, 5, 5), tf_b.shape)
+            self.assertEqual((5, 5, 5), tf_c.shape)
+
+            self.assertEqual(5**3, tf_a.sum())
+            self.assertEqual(5**3, tf_b.sum())
+            self.assertEqual(5**3, tf_c.sum())
 
         def test_sample(self):
             a, b, c = [np.ones((5,5,5))] * 3

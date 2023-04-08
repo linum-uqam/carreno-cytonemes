@@ -41,7 +41,7 @@ def training():
     n_features     = 64
     dropout        = 0.0
     batch_order    = 'after'
-    activation     = tf.keras.activations.relu
+    activation     = 'relu'
     top_activation = 'softmax'
     backbone       = wandb.config.backbone
     n_color_ch     = 3

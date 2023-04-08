@@ -2,7 +2,6 @@
 import numpy as np
 from skimage.transform import resize
 import patchify as p
-import scipy
 
 from carreno.utils.array import ndim_for_pixel
 

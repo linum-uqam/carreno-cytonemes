@@ -19,7 +19,7 @@ import carreno.utils.array
 import carreno.utils.morphology
 import carreno.io.tifffile
 import carreno.processing.patches
-import carreno.processing.classify
+import carreno.processing.categorical
 import carreno.threshold.threshold
 import carreno.cell.path
 
@@ -125,7 +125,7 @@ def main(verbose=0):
                       anti_aliasing=False)
 
         # hard labels (binarization of labels) TODO possible optimisation of threshold
-        segmentation = carreno.processing.classify.categorical_multiclass(pred)
+        segmentation = carreno.processing.categorical.categorical_multiclass(pred)
 
         cyto_m = segmentation[..., 1]
         body_m = segmentation[..., 2]

@@ -9,7 +9,7 @@ DIR:
   graph:       data/output/graph           # where we save our graphes
   figure:      data/output/figure          # where we save our figures
 
-# full volumes
+# volumes
 VOLUME:
   input:       data/dataset/input          # where labeled X inputs are
   target:      data/dataset/target         # where labeled Y inputs are
@@ -17,15 +17,6 @@ VOLUME:
   weight:      data/dataset/weight         # where inputs sample weights are
   soft_weight: data/dataset/soft_weight    # where inputs soft sample weights are
   unlabeled:   data/dataset/unlabeled      # where unlabeled inputs are
-
-# patchified volumes
-PATCH:
-  input:       data/dataset/input_p        # where labeled X patches are
-  target:      data/dataset/target_p       # where labeled Y patches are
-  soft_target: data/dataset/soft_target_p  # where soft labeled Y patches are
-  weight:      data/dataset/weight_p       # where inputs sample weights patches are
-  soft_weight: data/dataset/soft_weight_p  # where inputs soft sample weights patches are
-  unlabeled:   data/dataset/unlabeled_p    # where unlabeled patches are
 
 # For patch generation
 PREPROCESS:

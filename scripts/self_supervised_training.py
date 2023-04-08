@@ -46,7 +46,7 @@ def main(verbose=0):
                                                           random_state=6)
     x_valid, x_test, y_valid, y_test   = train_test_split(x_valid,
                                                           y_valid,
-                                                          test_size=0.4,
+                                                          test_size=0.5,
                                                           random_state=9)
     
     if verbose:

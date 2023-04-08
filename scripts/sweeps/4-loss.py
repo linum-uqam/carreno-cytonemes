@@ -16,13 +16,15 @@ from carreno.nn.generators import get_volumes_slices, volume_generator, volume_s
 sweep_config = {
     'method': 'grid',
     'name':   'sweep',
-    'project': 'unet2d_loss',
+    'project': 'unet2d_lr_act_loss',
     'metric': {
         'goal': 'maximize',
         'name': 'val_dice'
     },
     'parameters': {
-        'loss': {'values': ["dice", "bce_dice", "focal", "focal_bce_dice", "cldice"]}
+        'lr': {0.01, 0.001, 0.0001},
+        'activation': {'values': ["relu", "leaky_relu", "elu", "gelu"]},
+        'loss': {'values': ["dice", "bce_dice", "cldice"]}
     }
 }
 
@@ -41,12 +43,13 @@ def training():
     n_features     = 64
     dropout        = 0.0
     batch_order    = 'after'
-    activation     = 'relu'
+    activation     = wandb.config.activation
     top_activation = 'softmax'
     backbone       = 'vgg16'
     n_color_ch     = 3
     pretrained     = True
     loss           = wandb.config.loss
+    LR             = wandb.config.lr
 
     # must add color channel to grayscale
     is_2D = input_ndim == 4
@@ -159,8 +162,7 @@ def training():
     print("# TRAINING #")
     print("############")
 
-    LR         = 0.001
-    model_name = sweep_config['project'] + "-" + str(activation) + ".h5"
+    model_name = sweep_config['project'] + "-" + str(LR) + "-" + str(activation) + "-" + str(loss) + ".h5"
     model_path = os.path.join(config['DIR']['model'], model_name)
     Path(config['DIR']['model']).mkdir(parents=True, exist_ok=True)
 

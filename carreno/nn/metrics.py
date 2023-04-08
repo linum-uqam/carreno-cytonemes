@@ -1,8 +1,5 @@
 # -*- coding: utf-8 -*-
 import tensorflow as tf
-import tensorflow_addons as tfa
-from keras import backend as K
-from keras import layers as KL
 from tensorflow.keras.losses import CategoricalCrossentropy
 import scipy
 import numpy as np
@@ -94,14 +91,6 @@ def bce_dice_loss(y_true, y_pred):
     cce = CategoricalCrossentropy()
     loss = cce(y_true, y_pred) + dice_loss(y_true, y_pred)
     return loss
-
-
-focal_loss = tfa.losses.SigmoidFocalCrossEntropy(gamma=2., alpha=.25)
-
-
-def focal_bce_dice_loss(y_true, y_pred):
-    # https://arxiv.org/ftp/arxiv/papers/2209/2209.00729.pdf
-    return bce_dice_loss(y_true, y_pred) + focal_loss(y_true, y_pred)
 
 
 def dice_cldice2D_loss(iters=10, alpha=0.5):
@@ -227,6 +216,7 @@ def adap_wing_loss(theta=0.5, alpha=2.1, omega=14, epsilon=1):
     loss_function.__name__ = "AdaWingLoss"
     
     return loss_function
+
 
 class Adaptive_Wing_Loss():
     def __init__(self, alpha=float(2.1), omega=float(5), epsilon=float(1),theta=float(0.5)):

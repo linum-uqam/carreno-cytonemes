@@ -1,6 +1,4 @@
 # -*- coding: utf-8 -*-
-import numpy as np
-
 
 def balanced_class_weights(instances):
     """
@@ -23,3 +21,16 @@ def balanced_class_weights(instances):
     weights = [0 if i == 0 else fair_distribution / i for i in instances]
                 
     return weights
+
+
+if __name__ == "__main__":
+    import unittest
+
+    class TestWeights(unittest.TestCase):
+        def test_balanced_class_weights(self):
+            instances = [8, 4, 2]
+            avg = 14 / 3
+            expected = [avg * i for i in (0.125, 0.25, 0.5)]
+            self.assertTrue(expected, balanced_class_weights(instances=instances))
+            
+    unittest.main()
