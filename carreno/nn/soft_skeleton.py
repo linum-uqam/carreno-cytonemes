@@ -3,7 +3,7 @@
 #
 
 import tensorflow as tf
-from tensorflow.keras import layers as KL
+from keras import layers as KL
 
 
 def soft_erode2D(img):
