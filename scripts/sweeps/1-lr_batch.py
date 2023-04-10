@@ -21,7 +21,7 @@ sweep_config = {
         'name': 'val_dicecldice'
     },
     'parameters': {
-        'lr':   {'values': [0.01, 0.001, 0.0001]},
+        'lr':   {'values': [0.01, 0.005, 0.001, 0.0005, 0.0001]},
         'size': {'values': [32, 64, 96, 128]}
     }
 }
@@ -30,9 +30,8 @@ sweep_config = {
 def main():
     sweep_id = wandb.sweep(sweep_config)
     sweeper = utils.Sweeper(sweep_config)
-    #wandb.agent(sweep_id, function=sweeper.sweep)
-    sweeper.sweep()
-
+    wandb.agent(sweep_id, function=sweeper.sweep)
+    
 
 if __name__ == "__main__":
     main()

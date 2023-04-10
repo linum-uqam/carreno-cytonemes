@@ -15,18 +15,18 @@ from carreno.io.fetcher import fetch_folder, folders_id
 from carreno.utils.array import normalize
 from carreno.processing.weights import balanced_class_weights
 
-download                 = 0  # False if the folders are already downloaded
-uncompress_raw           = 0  # uncompress archives in raw data, error if uncompressed files are missing with options uncompress_raw and hand_drawn_cyto
-create_labeled_dataset   = 0  # organise uncompressed labeled data
-create_sample_weights    = 0  # make weight distributions for labeled data patches (during `create_labeled_dataset`)
-create_unlabeled_dataset = 0  # organise uncompressed unlabeled data
-hand_drawn_cyto_dataset  = 0  # save hand drawn cytonemes (2D) in data
-cleanup_uncompressed     = 0  # cleanup extracted files in raw folder
+download                 = 1  # False if the folders are already downloaded
+uncompress_raw           = 1  # uncompress archives in raw data, error if uncompressed files are missing with options uncompress_raw and hand_drawn_cyto
+create_labeled_dataset   = 1  # organise uncompressed labeled data
+create_sample_weights    = 1  # make weight distributions for labeled data patches (during `create_labeled_dataset`)
+create_unlabeled_dataset = 1  # organise uncompressed unlabeled data
+hand_drawn_cyto_dataset  = 1  # save hand drawn cytonemes (2D) in data
+cleanup_uncompressed     = 1  # cleanup extracted files in raw folder
 
 config        = utils.get_config()
 raw_dir       = config['DIR']['raw']
 drawing_dir   = config['DIR']['drawing']
-download_dir  = config['DIR']['raw'].rsplit("/", 1)  # folder where downloads and dataset will be put, must not exist for download
+download_dir  = config['DIR']['raw'].rsplit("/", 1)[0]  # folder where downloads and dataset will be put, must not exist for download
 input_dir     = config['VOLUME']['input']
 target_dir    = config['VOLUME']['target']
 weight_dir    = config['VOLUME']['weight']

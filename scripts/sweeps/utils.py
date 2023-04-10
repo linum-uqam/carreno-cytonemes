@@ -293,7 +293,7 @@ class Sweeper():
 
         dice       = mtc.Dice()
         cedice     = mtc.CeDice()
-        dicecldice = mtc.DiceClDice(iters=10, ndim=self.params['ndim'])
+        dicecldice = mtc.DiceClDice(iters=7, ndim=self.params['ndim'])
         loss_fn = dice.loss
         if self.params['loss'] == "cedice":
             loss_fn = cedice.loss
