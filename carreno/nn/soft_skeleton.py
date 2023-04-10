@@ -6,7 +6,7 @@ import tensorflow as tf
 from keras import layers as KL
 
 
-def soft_dilate2D(img, mode=1):
+def soft_dilate2D(img, mode=0):
     """
     Soft-dilate operation on a float32 image
     Args:
@@ -14,6 +14,9 @@ def soft_dilate2D(img, mode=1):
             Image to be soft dilated
         mode : int
             0:'same' or 1:'reflect'
+            
+            Theorically, same padding should dilate img padding into tensor,
+            hence reflect, but it doesn't seem to change anything.
     Returns:
         img : tf.tensor([float32])
             Dilated image
@@ -27,7 +30,7 @@ def soft_dilate2D(img, mode=1):
         raise NotImplementedError
 
 
-def soft_dilate3D(img, mode=1):
+def soft_dilate3D(img, mode=0):
     """
     Soft-dilate operation on a float32 image
     Args:
@@ -44,9 +47,11 @@ def soft_dilate3D(img, mode=1):
     elif mode == 1:
         pad = tf.pad(img, paddings=[[0,0], [1, 1], [1, 1], [1, 1], [0,0]], mode='REFLECT')
         return KL.MaxPool3D(pool_size=(3, 3, 3), strides=(1, 1, 1), padding='valid')(pad)
+    else:
+        raise NotImplementedError
 
 
-def soft_erode2D(img, mode=1):
+def soft_erode2D(img, mode=0):
     """
     Soft-erode operation on a float32 image
     Args:
@@ -61,7 +66,7 @@ def soft_erode2D(img, mode=1):
     return -soft_dilate2D(-img, mode=mode)
 
 
-def soft_erode3D(img, mode=1):
+def soft_erode3D(img, mode=0):
     """
     Soft-erode operation on a float32 image
     Args:
@@ -77,7 +82,7 @@ def soft_erode3D(img, mode=1):
     return -soft_dilate3D(-img, mode=mode)
 
 
-def soft_open2D(img, mode=1):
+def soft_open2D(img, mode=0):
     """
     Soft-open operation on a float32 image
     Args:
@@ -94,7 +99,7 @@ def soft_open2D(img, mode=1):
     return img
 
 
-def soft_open3D(img, mode=1):
+def soft_open3D(img, mode=0):
     """
     Soft-open operation on a float32 image
     Args:
@@ -111,7 +116,7 @@ def soft_open3D(img, mode=1):
     return img
 
 
-def soft_skel2D(img, iters, mode=1):
+def soft_skel2D(img, iters, mode=0):
     """[summary]
     Args:
         img ([float32]): [description]
@@ -143,7 +148,7 @@ def soft_skel2D(img, iters, mode=1):
     return skel
 
 
-def soft_skel3D(img, iters, mode=1):
+def soft_skel3D(img, iters, mode=0):
     """[summary]
     Args:
         img ([float32]): [description]
@@ -238,20 +243,18 @@ if __name__ == '__main__':
             self.assertTrue(tf.reduce_all(tf.math.equal(soft_skel2D(x[:, h], iters=0, mode=1), y[:, h])))
             self.assertTrue(tf.reduce_all(tf.math.equal(soft_skel3D(x      , iters=0, mode=1), y)))
             
-    unittest.main()
+    #unittest.main()
 
-    """
     # Visualization of clDice inner working
     import matplotlib.pyplot as plt
     import numpy as np
     from skimage.filters import gaussian
 
     cube = np.zeros((20, 20, 20, 3))
-    cube[4:-4, 4:-4, 4:-4] = [0, 1, 0]
+    cube[4:-4, 4:, 4:-4] = [0, 1, 0]
     cube[:4]        = [1, 0, 0]
     cube[-4:]       = [1, 0, 0]
     cube[:, :4]     = [1, 0, 0]
-    cube[:, -4:]    = [1, 0, 0]
     cube[:, :, :4]  = [1, 0, 0]
     cube[:, :, -4:] = [1, 0, 0]
     cube = gaussian(cube, sigma=1.05, multichannel=True)
@@ -259,8 +262,8 @@ if __name__ == '__main__':
 
     n = cube.shape[0] // 2
 
-    def __plt_skel(img, iters, n):
-        img1 = soft_open3D(img)
+    def __plt_skel(img, iters, n, mode=1):
+        img1 = soft_open3D(img, mode)
         skel = tf.nn.relu(img-img1)
 
         for j in range(iters):
@@ -270,12 +273,12 @@ if __name__ == '__main__':
 
             plt.subplot(232)
             plt.title('erosion')
-            img = soft_erode3D(img)
+            img = soft_erode3D(img, mode)
             plt.imshow(img.numpy()[0,n])
 
             plt.subplot(233)
             plt.title('opening')
-            img1 = soft_open3D(img)
+            img1 = soft_open3D(img, mode)
             plt.imshow(img1.numpy()[0,n])
 
             plt.subplot(234)
@@ -295,5 +298,6 @@ if __name__ == '__main__':
             
             plt.show()
 
-    __plt_skel(cube_tensor, 7, n)
-    """
+    __plt_skel(cube_tensor, 7, n, mode=0)
+    
+    
