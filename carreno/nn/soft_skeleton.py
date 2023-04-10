@@ -116,53 +116,56 @@ def soft_open3D(img, mode=0):
     return img
 
 
-def soft_skel2D(img, iters, mode=0):
-    """[summary]
-    Args:
-        img ([float32]): [description]
-        iters ([int]): [description]
-    Returns:
-        [float32]: [description]
-    """
+def soft_skel2D(img, iters, cls=slice(0, None), mode=0):
     """
     Soft-skeleton operation on a float32 image
     Args:
         img : tf.tensor([float32])
             Image to be soft skeletoned
+        cls : slice
+            Slice of classes to skeletonize
         mode : int
             0:'same' or 1:'reflect'
     Returns:
         img : tf.tensor([float32])
             Skeletoned image
     """
-    img1 = soft_open2D(img, mode=mode)
-    skel = tf.nn.relu(img-img1)
+    img1 = img[:, :, :, cls]
+    img2 = soft_open2D(img1, mode=mode)
+    skel = tf.nn.relu(img1-img2)
 
     for j in range(iters):
-        img = soft_erode2D(img, mode=mode)
-        img1 = soft_open2D(img, mode=mode)
-        delta = tf.nn.relu(img-img1)
+        img1 = soft_erode2D(img1, mode=mode)
+        img2 =  soft_open2D(img1, mode=mode)
+        delta =  tf.nn.relu(img1 - img2)
         intersect = tf.math.multiply(skel, delta)
         skel += tf.nn.relu(delta-intersect)
 
     return skel
 
 
-def soft_skel3D(img, iters, mode=0):
-    """[summary]
-    Args:
-        img ([float32]): [description]
-        iters ([int]): [description]
-    Returns:
-        [float32]: [description]
+def soft_skel3D(img, iters, cls=slice(0, None), mode=0):
     """
-    img1 = soft_open3D(img, mode=mode)
-    skel = tf.nn.relu(img-img1)
+    Soft-skeleton operation on a float32 image
+    Args:
+        img : tf.tensor([float32])
+            Image to be soft skeletoned
+        cls : slice
+            Slice of classes to skeletonize
+        mode : int
+            0:'same' or 1:'reflect'
+    Returns:
+        img : tf.tensor([float32])
+            Skeletoned image
+    """
+    img1 = img[:, :, :, :, cls]
+    img2 = soft_open3D(img1, mode=mode)
+    skel = tf.nn.relu(img1-img2)
 
     for j in range(iters):
-        img = soft_erode3D(img, mode=mode)
-        img1 = soft_open3D(img, mode=mode)
-        delta = tf.nn.relu(img-img1)
+        img1 = soft_erode3D(img1, mode=mode)
+        img2 =  soft_open3D(img1, mode=mode)
+        delta =  tf.nn.relu(img1 - img2)
         intersect = tf.math.multiply(skel, delta)
         skel += tf.nn.relu(delta-intersect)
 
@@ -242,9 +245,14 @@ if __name__ == '__main__':
             # reflect pad
             self.assertTrue(tf.reduce_all(tf.math.equal(soft_skel2D(x[:, h], iters=0, mode=1), y[:, h])))
             self.assertTrue(tf.reduce_all(tf.math.equal(soft_skel3D(x      , iters=0, mode=1), y)))
-            
-    #unittest.main()
 
+            # slice class
+            self.assertTrue(tf.reduce_all(tf.math.equal(soft_skel2D(x[:, h], iters=0, cls=slice(1, None), mode=0), y[:, h, :, :, 1:])))
+            self.assertTrue(tf.reduce_all(tf.math.equal(soft_skel3D(x      , iters=0, cls=slice(1, None), mode=0), y[:, :, :, :, 1:])))
+            
+    unittest.main()
+
+    """
     # Visualization of clDice inner working
     import matplotlib.pyplot as plt
     import numpy as np
@@ -299,5 +307,5 @@ if __name__ == '__main__':
             plt.show()
 
     __plt_skel(cube_tensor, 7, n, mode=0)
-    
+    """
     

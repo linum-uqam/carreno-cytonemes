@@ -98,7 +98,7 @@ class CeDice(Dice):
 
 
 class ClDice(Dice):
-    def __init__(self, iters=10, ndim=2, smooth=1.):
+    def __init__(self, iters=10, ndim=2, cls=slice(0, None), smooth=1.):
         """
         Compute clDice coefficient and loss.
         Parameters
@@ -107,12 +107,16 @@ class ClDice(Dice):
             Skeletonization iteration
         ndim : int
             Number of dimensions for data (not including feature channels)
+        cls : slice
+            Class to consider for skeletonization
         smooth : float
             Smoothing factor added to numerator and denominator when dividing
         """
         assert ndim > 1 and ndim < 4, "Incompatible dimensions, expected between 2 and 3, got {}".format(ndim)
         super().__init__(smooth=smooth)
         self.iters = iters
+        self.cls = cls
+        self.mode = 0
         self.skel_fn = soft_skel2D if ndim == 2 else soft_skel3D
     
     def coefficient(self, y_true, y_pred):
@@ -129,8 +133,8 @@ class ClDice(Dice):
         score : float
             clDice score
         """
-        skel_pred = self.skel_fn(y_pred, self.iters)
-        skel_true = self.skel_fn(y_true, self.iters)
+        skel_pred = self.skel_fn(y_pred, self.iters, mode=self.mode)
+        skel_true = self.skel_fn(y_true, self.iters, mode=self.mode)
         pres = (K.sum(tf.math.multiply(skel_pred, y_true))+self.smooth)/(K.sum(skel_pred)+self.smooth)    
         rec  = (K.sum(tf.math.multiply(skel_true, y_pred))+self.smooth)/(K.sum(skel_true)+self.smooth)
         return 2.0*(pres*rec)/(pres+rec)
@@ -156,7 +160,7 @@ class ClDice(Dice):
     loss.__name__ = "cldice_loss"
 
 class DiceClDice(ClDice):
-    def __init__(self, alpha=0.5, iters=10, ndim=2, smooth=1):
+    def __init__(self, alpha=0.5, iters=10, ndim=2, cls=slice(0, None), smooth=1):
         """
         Compute Dice with clDice coefficient and loss
         Parameters
@@ -165,15 +169,17 @@ class DiceClDice(ClDice):
             Ratio for clDice proportion vs Dice
         iters : int
             Skeletonization iteration
-        smooth : float
-            Smoothing factor added to numerator and denominator when dividing
+        cls : slice
+            Class to consider for skeletonization
         ndim : int
             Number of dimensions for data (not including feature channels)
+        smooth : float
+            Smoothing factor added to numerator and denominator when dividing
         """
-        super().__init__(iters=iters, ndim=ndim, smooth=smooth)
+        super().__init__(iters=iters, ndim=ndim, cls=cls, smooth=smooth)
         self.alpha = alpha
         self.dice = Dice(smooth=smooth)
-        self.cldice = ClDice(iters=iters, ndim=ndim, smooth=smooth)
+        self.cldice = ClDice(iters=iters, ndim=ndim, cls=cls, smooth=smooth)
     
     def coefficient(self, y_true, y_pred):
         """

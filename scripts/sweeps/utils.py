@@ -167,7 +167,7 @@ class Sweeper():
             'depth':    4,          # unet depth
             'nfeat':    64,         # nb feature for first conv layer
             'lr':       0.001,      # learning rate
-            'bsize':    96 if ndim == 3 else 3,  # batch size
+            'bsize':    64 if ndim == 3 else 3,  # batch size
             'scaler':   'norm',     # normalize or standardize
             'label':    'hard',     # hard or soft input
             'order':    'before',   # where to put batch norm
@@ -181,20 +181,21 @@ class Sweeper():
             'dupe':     48          # number of data duplication to fit batch size
         }
     
-    def update_attr(self):
-        """
-        Update attributes for sweep parameters.
-        """
+    def sweep(self):
+        wandb.init()
+
+        print("###############")
+        print("# UPDATE ATTR #")
+        print("###############")
         for param in self.swp_config['parameters'].keys():
             if param in self.params:
+                print("-update {} from {} to {}".format(param, self.params[param], getattr(wandb.config, param, None)))
                 self.params[param] = getattr(wandb.config, param, self.params[param])
-    
-    def model(self):
+        
         print("###############")
         print("# BUILD MODEL #")
         print("###############")
-        print("DEBUG SHAPE", self.params['shape'][-self.params['ndim']:])
-        self.params['ndim'] == 2
+        
         backbone = None if self.params['backbone'] == 'base' else self.params['backbone']
         self.model = UNet(shape=self.params['shape'][-self.params['ndim']:] + [self.params['ncolor']],
                           n_class=self.prj_config['PREPROCESS']['n_cls'],
@@ -209,7 +210,6 @@ class Sweeper():
 
         self.model.summary()
 
-    def data(self):
         print("###############")
         print("# SET LOADERS #")
         print("###############")
@@ -259,8 +259,7 @@ class Sweeper():
                                    size=self.params['bsize'],
                                    augmentation=test_aug,
                                    shuffle=False)
-    
-    def train(self):
+        
         print("############")
         print("# TRAINING #")
         print("############")
@@ -293,7 +292,8 @@ class Sweeper():
 
         dice       = mtc.Dice()
         cedice     = mtc.CeDice()
-        dicecldice = mtc.DiceClDice(iters=7, ndim=self.params['ndim'])
+        cldice     = mtc.ClDice(    iters=10, ndim=self.params['ndim'], cls=slice(1,2))  # only skeletonize cyto
+        dicecldice = mtc.DiceClDice(iters=10, ndim=self.params['ndim'], cls=slice(1,2))
         loss_fn = dice.loss
         if self.params['loss'] == "cedice":
             loss_fn = cedice.loss
@@ -302,7 +302,7 @@ class Sweeper():
 
         self.model.compile(optimizer=optim,
                            loss=loss_fn,
-                           metrics=[dicecldice.coefficient],
+                           metrics=[dice.coefficient, cldice.coefficient, dicecldice.coefficient],
                            sample_weight_mode="temporal")
 
         self.model.fit(self.train_gen,
@@ -317,22 +317,13 @@ class Sweeper():
                            wandb_checkpoint,
                            metrics_logger
                        ])
-    
-    def evaluate(self):
+
         print("############")
         print("# EVALUATE #")
         print("############")
     
         results = self.model.evaluate(self.test_gen, return_dict=True, verbose=1)
         wandb.log(results)
-    
-    def sweep(self):
-        wandb.init()
-        self.update_attr()
-        self.model()
-        self.data()
-        self.train()
-        self.evaluate()
 
 
 if __name__ == "__main__":
