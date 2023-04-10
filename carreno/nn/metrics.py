@@ -94,6 +94,8 @@ class CeDice(Dice):
         # cannot use dice loss function with `super` since coefficient function is overridden
         return self.dice.loss(y_true, y_pred) + self.ce(y_true, y_pred)
 
+    loss.__name__ = "cddice_loss"
+
 
 class ClDice(Dice):
     def __init__(self, iters=10, ndim=2, smooth=1.):
@@ -133,6 +135,8 @@ class ClDice(Dice):
         rec  = (K.sum(tf.math.multiply(skel_true, y_pred))+self.smooth)/(K.sum(skel_true)+self.smooth)
         return 2.0*(pres*rec)/(pres+rec)
     
+    coefficient.__name__ = "cldice"
+
     def loss(self, y_true, y_pred):
         """
         clDice loss between 0 (best) and 1 (worst).
@@ -149,6 +153,7 @@ class ClDice(Dice):
         """
         return 1. - self.coefficient(y_true, y_pred)
 
+    loss.__name__ = "cldice_loss"
 
 class DiceClDice(ClDice):
     def __init__(self, alpha=0.5, iters=10, ndim=2, smooth=1):
@@ -188,6 +193,8 @@ class DiceClDice(ClDice):
         cldice_value = self.alpha     * self.cldice.coefficient(y_true, y_pred)
         return dice_value + cldice_value
     
+    coefficient.__name__ = "dicecldice"
+
     def loss(self, y_true, y_pred):
         """
         Dice + clDice loss between 0 (best) and 1 (worst).
@@ -205,6 +212,8 @@ class DiceClDice(ClDice):
         dice_value   = (1 - self.alpha) * self.dice.loss(y_true, y_pred)
         cldice_value = self.alpha     * self.cldice.loss(y_true, y_pred)
         return dice_value + cldice_value
+
+    loss.__name__ = "dicecldice_loss"
 
 
 class AdaptiveWingLoss():
@@ -343,7 +352,6 @@ if __name__ == "__main__":
             loss = adawing.loss
 
             # loss
-            print("DEBUG", loss(y, p).numpy())
             self.assertLessEqual(1, loss(y, p).numpy())
             self.assertEqual(0, loss(y, y).numpy())
 
