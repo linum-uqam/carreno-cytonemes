@@ -522,7 +522,7 @@ class Tensor(Transform):
         w : array-like, None
             Weight tensor
         """
-        return [None if i is None else tf.convert_to_tensor(i) for i in (x,y,w)]
+        return [None if i is None else tf.convert_to_tensor(i, dtype=tf.float32) for i in (x,y,w)]
 
 
 if __name__ == "__main__":

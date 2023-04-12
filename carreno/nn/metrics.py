@@ -98,7 +98,7 @@ class CeDice(Dice):
 
 
 class ClDice(Dice):
-    def __init__(self, iters=10, ndim=2, cls=slice(0, None), smooth=1.):
+    def __init__(self, iters=10, ndim=2, mode=2, cls=slice(0, None), smooth=1.):
         """
         Compute clDice coefficient and loss.
         Parameters
@@ -107,6 +107,9 @@ class ClDice(Dice):
             Skeletonization iteration
         ndim : int
             Number of dimensions for data (not including feature channels)
+        mode : int
+            Padding type
+            Refer to carreno.nn.soft_skeleton.soft_dilate2D
         cls : slice
             Class to consider for skeletonization
         smooth : float
@@ -116,7 +119,7 @@ class ClDice(Dice):
         super().__init__(smooth=smooth)
         self.iters = iters
         self.cls = cls
-        self.mode = 0
+        self.mode = mode
         self.skel_fn = soft_skel2D if ndim == 2 else soft_skel3D
     
     def coefficient(self, y_true, y_pred):
@@ -160,7 +163,7 @@ class ClDice(Dice):
     loss.__name__ = "cldice_loss"
 
 class DiceClDice(ClDice):
-    def __init__(self, alpha=0.5, iters=10, ndim=2, cls=slice(0, None), smooth=1):
+    def __init__(self, alpha=0.5, iters=10, ndim=2, mode=2, cls=slice(0, None), smooth=1):
         """
         Compute Dice with clDice coefficient and loss
         Parameters
@@ -169,17 +172,19 @@ class DiceClDice(ClDice):
             Ratio for clDice proportion vs Dice
         iters : int
             Skeletonization iteration
-        cls : slice
-            Class to consider for skeletonization
         ndim : int
             Number of dimensions for data (not including feature channels)
+        mode : int
+            Padding type
+            Refer to carreno.nn.soft_skeleton.soft_dilate2D
+        cls : slice
+            Class to consider for skeletonization
         smooth : float
             Smoothing factor added to numerator and denominator when dividing
         """
-        super().__init__(iters=iters, ndim=ndim, cls=cls, smooth=smooth)
         self.alpha = alpha
         self.dice = Dice(smooth=smooth)
-        self.cldice = ClDice(iters=iters, ndim=ndim, cls=cls, smooth=smooth)
+        self.cldice = ClDice(iters=iters, ndim=ndim, cls=cls, mode=mode, smooth=smooth)
     
     def coefficient(self, y_true, y_pred):
         """
@@ -309,47 +314,47 @@ if __name__ == "__main__":
             self.assertEqual(0, round(loss(y, y).numpy(), 5))
         
         def test_ClDice(self):
-            class1 = np.ones((5,5))
-            class2 = np.zeros((5,5))
-            img = np.stack([class1, class2], axis=-1)
+            img = np.stack([np.zeros((5,5))]*2, axis=-1)
             skel = img.copy()
             skel[:, 2, :] = [0,1]
             y = tf.expand_dims(tf.convert_to_tensor(skel, dtype=tf.float32), axis=0)
             p = tf.expand_dims(tf.convert_to_tensor(img,  dtype=tf.float32), axis=0)
-            cldice = ClDice(iters=0, ndim=2, smooth=1e-5)
-            coef = cldice.coefficient
-            loss = cldice.loss
+            
+            for m in range(3):
+                cldice = ClDice(iters=-1, ndim=2, mode=m, smooth=1e-5)
+                coef = cldice.coefficient
+                loss = cldice.loss
 
-            # coef
-            self.assertEqual(0, round(coef(y, p).numpy(), 5))
-            self.assertEqual(1, coef(y, y).numpy())
+                # coef
+                self.assertEqual(0, round(coef(y, p).numpy(), 5))
+                self.assertEqual(1, coef(y, y).numpy())
 
-            # loss
-            self.assertEqual(1, round(loss(y, p).numpy(), 5))
-            self.assertEqual(0, loss(y, y).numpy())
+                # loss
+                self.assertEqual(1, round(loss(y, p).numpy(), 5))
+                self.assertEqual(0, loss(y, y).numpy())
         
         def test_DiceClDice(self):
-            class1 = np.ones((5,5))
-            class2 = np.zeros((5,5))
-            img = np.stack([class1, class2], axis=-1)
+            img = np.stack([np.zeros((5,5)), np.zeros((5,5))], axis=-1)
             skel = img.copy()
             skel[:, 2, :] = [0,1]
             y =  tf.expand_dims(tf.convert_to_tensor(skel,   dtype=tf.float32), axis=0)
             p1 = tf.expand_dims(tf.convert_to_tensor(1-img,  dtype=tf.float32), axis=0)
             p2 = tf.expand_dims(tf.convert_to_tensor(1-skel, dtype=tf.float32), axis=0)
-            dicecldice = DiceClDice(alpha=0.5, iters=0, ndim=2, smooth=1e-5)
-            coef = dicecldice.coefficient
-            loss = dicecldice.loss
             
-            # coef
-            self.assertTrue(0 < coef(y, p1).numpy() < 1)
-            self.assertEqual(0, round(coef(y, p2).numpy(), 5))
-            self.assertEqual(1, coef(y, y).numpy())
+            for m in range(3):
+                dicecldice = DiceClDice(alpha=0.5, iters=-1, ndim=2, mode=m, smooth=1e-5)
+                coef = dicecldice.coefficient
+                loss = dicecldice.loss
 
-            # loss
-            self.assertTrue(0 < loss(y, p1).numpy() < 1)
-            self.assertEqual(1, round(loss(y, p2).numpy(), 5))
-            self.assertEqual(0, loss(y, y).numpy())
+                # coef
+                self.assertTrue(0 < coef(y, p1).numpy() < 1)
+                self.assertEqual(0, round(coef(y, p2).numpy(), 5))
+                self.assertEqual(1, coef(y, y).numpy())
+
+                # loss
+                self.assertTrue(0 < loss(y, p1).numpy() < 1)
+                self.assertEqual(1, round(loss(y, p2).numpy(), 5))
+                self.assertEqual(0, loss(y, y).numpy())
         
         def test_AdaWing(self):
             y = tf.convert_to_tensor([[0,1],[1,0]], dtype=tf.float32)

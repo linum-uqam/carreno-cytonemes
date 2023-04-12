@@ -13,10 +13,14 @@ def soft_dilate2D(img, mode=0):
         img : tf.tensor([float32])
             Image to be soft dilated
         mode : int
-            0:'same' or 1:'reflect'
+            Padding type
+            - 0 : same
+            - 1 : reflect
+            - 2 : constant with 0
             
-            Theorically, same padding should dilate img padding into tensor,
-            hence reflect, but it doesn't seem to change anything.
+            Theorically, 'same' padding should dilate img padding into tensor with value 0
+            (according to convolution layers doc), hence reflect, but it doesn't seem to
+            change anything. Using our own constant padding of 0, the theory is proven right.
     Returns:
         img : tf.tensor([float32])
             Dilated image
@@ -25,6 +29,9 @@ def soft_dilate2D(img, mode=0):
         return KL.MaxPool2D(pool_size=(3, 3), strides=(1, 1), padding='same')(img)
     elif mode == 1:
         pad = tf.pad(img, paddings=[[0,0], [1, 1], [1, 1], [0,0]], mode='REFLECT')
+        return KL.MaxPool2D(pool_size=(3, 3), strides=(1, 1), padding='valid')(pad)
+    elif mode == 2:
+        pad = tf.pad(img, paddings=[[0,0], [1, 1], [1, 1], [0,0]], mode='CONSTANT', constant_values=0)
         return KL.MaxPool2D(pool_size=(3, 3), strides=(1, 1), padding='valid')(pad)
     else:
         raise NotImplementedError
@@ -37,7 +44,7 @@ def soft_dilate3D(img, mode=0):
         img : tf.tensor([float32])
             Image to be soft dilated
         mode : int
-            0:'same' or 1:'reflect'
+            Refer to soft_dilate2D
     Returns:
         img : tf.tensor([float32])
             Dilated image
@@ -46,6 +53,9 @@ def soft_dilate3D(img, mode=0):
         return KL.MaxPool3D(pool_size=(3, 3, 3), strides=(1, 1, 1), padding='same')(img)
     elif mode == 1:
         pad = tf.pad(img, paddings=[[0,0], [1, 1], [1, 1], [1, 1], [0,0]], mode='REFLECT')
+        return KL.MaxPool3D(pool_size=(3, 3, 3), strides=(1, 1, 1), padding='valid')(pad)
+    elif mode == 2:
+        pad = tf.pad(img, paddings=[[0,0], [1, 1], [1, 1], [1, 1], [0,0]], mode='CONSTANT', constant_values=0)
         return KL.MaxPool3D(pool_size=(3, 3, 3), strides=(1, 1, 1), padding='valid')(pad)
     else:
         raise NotImplementedError
@@ -58,7 +68,7 @@ def soft_erode2D(img, mode=0):
         img : tf.tensor([float32])
             Image to be soft eroded
         mode : int
-            0:'same' or 1:'reflect'
+            Refer to soft_dilate2D
     Returns:
         img : tf.tensor([float32])
             Eroded image
@@ -73,7 +83,7 @@ def soft_erode3D(img, mode=0):
         img : tf.tensor([float32])
             Image to be soft eroded
         mode : int
-            0:'same' or 1:'reflect'
+            Refer to soft_dilate2D
     Returns:
         img : tf.tensor([float32])
             Eroded image
@@ -89,7 +99,7 @@ def soft_open2D(img, mode=0):
         img : tf.tensor([float32])
             Image to be soft opened
         mode : int
-            0:'same' or 1:'reflect'
+            Refer to soft_dilate2D
     Returns:
         img : tf.tensor([float32])
             Opened image
@@ -106,7 +116,7 @@ def soft_open3D(img, mode=0):
         img : tf.tensor([float32])
             Image to be soft opened
         mode : int
-            0:'same' or 1:'reflect'
+            Refer to soft_dilate2D
     Returns:
         img : tf.tensor([float32])
             Opened image
@@ -116,16 +126,19 @@ def soft_open3D(img, mode=0):
     return img
 
 
-def soft_skel2D(img, iters, cls=slice(0, None), mode=0):
+def soft_skel2D(img, iters=-1, cls=slice(0, None), mode=0):
     """
     Soft-skeleton operation on a float32 image
     Args:
         img : tf.tensor([float32])
             Image to be soft skeletoned
+        iters : int
+            Number of thinning iterations
+            Negative for infinite
         cls : slice
             Slice of classes to skeletonize
         mode : int
-            0:'same' or 1:'reflect'
+            Refer to soft_dilate2D
     Returns:
         img : tf.tensor([float32])
             Skeletoned image
@@ -134,26 +147,34 @@ def soft_skel2D(img, iters, cls=slice(0, None), mode=0):
     img2 = soft_open2D(img1, mode=mode)
     skel = tf.nn.relu(img1-img2)
 
-    for j in range(iters):
+    i = iters
+    while i != 0:
+        prev = tf.identity(img1)
         img1 = soft_erode2D(img1, mode=mode)
+        if tf.reduce_all(tf.math.equal(prev, img1)):
+            break
         img2 =  soft_open2D(img1, mode=mode)
         delta =  tf.nn.relu(img1 - img2)
         intersect = tf.math.multiply(skel, delta)
         skel += tf.nn.relu(delta-intersect)
+        i -= 1
 
     return skel
 
 
-def soft_skel3D(img, iters, cls=slice(0, None), mode=0):
+def soft_skel3D(img, iters=-1, cls=slice(0, None), mode=0):
     """
     Soft-skeleton operation on a float32 image
     Args:
         img : tf.tensor([float32])
             Image to be soft skeletoned
+        iters : int
+            Number of thinning iterations
+            Negative for infinite
         cls : slice
             Slice of classes to skeletonize
         mode : int
-            0:'same' or 1:'reflect'
+            Refer to soft_dilate2D
     Returns:
         img : tf.tensor([float32])
             Skeletoned image
@@ -162,12 +183,17 @@ def soft_skel3D(img, iters, cls=slice(0, None), mode=0):
     img2 = soft_open3D(img1, mode=mode)
     skel = tf.nn.relu(img1-img2)
 
-    for j in range(iters):
+    i = iters
+    while i != 0:
+        prev = tf.identity(img1)
         img1 = soft_erode3D(img1, mode=mode)
+        if tf.reduce_all(tf.math.equal(prev, img1)):
+            break
         img2 =  soft_open3D(img1, mode=mode)
         delta =  tf.nn.relu(img1 - img2)
         intersect = tf.math.multiply(skel, delta)
         skel += tf.nn.relu(delta-intersect)
+        i -= 1
 
     return skel
 
@@ -252,7 +278,7 @@ if __name__ == '__main__':
             
     unittest.main()
 
-    """
+    
     # Visualization of clDice inner working
     import matplotlib.pyplot as plt
     import numpy as np
@@ -270,7 +296,7 @@ if __name__ == '__main__':
 
     n = cube.shape[0] // 2
 
-    def __plt_skel(img, iters, n, mode=1):
+    def __plt_skel(img, iters, n, mode=0):
         img1 = soft_open3D(img, mode)
         skel = tf.nn.relu(img-img1)
 
@@ -306,6 +332,6 @@ if __name__ == '__main__':
             
             plt.show()
 
-    __plt_skel(cube_tensor, 7, n, mode=0)
-    """
+    __plt_skel(cube_tensor, 7, n, mode=2)
+    
     
