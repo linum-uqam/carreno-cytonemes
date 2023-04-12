@@ -5,197 +5,159 @@
 import tensorflow as tf
 from keras import layers as KL
 
+def_mode = 0
 
-def soft_dilate2D(img, mode=0):
+
+def soft_dilate(ndim, img, mode=def_mode):
     """
     Soft-dilate operation on a float32 image
-    Args:
-        img : tf.tensor([float32])
-            Image to be soft dilated
-        mode : int
-            Padding type
-            - 0 : same
-            - 1 : reflect
-            - 2 : constant with 0
-            
-            Theorically, 'same' padding should dilate img padding into tensor with value 0
-            (according to convolution layers doc), hence reflect, but it doesn't seem to
-            change anything. Using our own constant padding of 0, the theory is proven right.
-    Returns:
-        img : tf.tensor([float32])
-            Dilated image
+    Parameters
+    ----------
+    ndim : int
+        2 for 2D, else 3D
+    img : tf.tensor([float32])
+        Image to be soft dilated
+    mode : int
+        Padding type
+        - 0 : same
+        - 1 : reflect
+        - 2 : constant with 0
+        
+        Theorically, 'same' padding should dilate img padding into tensor with value 0
+        (according to convolution layers doc), hence reflect, but it doesn't seem to
+        change anything. Using our own constant padding of 0, the theory is proven right.
+    Returns
+    -------
+    img : tf.tensor([float32])
+        Dilated image
     """
+    pool_fn = KL.MaxPool2D if ndim == 2 else KL.MaxPool3D
+    pool_size = [3] * ndim
+    strides   = [1] * ndim
+    paddings = [[0,0], *([[1,1]] * ndim), [0,0]]
+    
     if mode == 0:
-        return KL.MaxPool2D(pool_size=(3, 3), strides=(1, 1), padding='same')(img)
+        img = pool_fn(pool_size=pool_size, strides=strides, padding='same')(img)
     elif mode == 1:
-        pad = tf.pad(img, paddings=[[0,0], [1, 1], [1, 1], [0,0]], mode='REFLECT')
-        return KL.MaxPool2D(pool_size=(3, 3), strides=(1, 1), padding='valid')(pad)
+        pad = tf.pad(img, paddings=paddings, mode='REFLECT')
+        img = pool_fn(pool_size=pool_size, strides=strides, padding='valid')(pad)
     elif mode == 2:
-        pad = tf.pad(img, paddings=[[0,0], [1, 1], [1, 1], [0,0]], mode='CONSTANT', constant_values=0)
-        return KL.MaxPool2D(pool_size=(3, 3), strides=(1, 1), padding='valid')(pad)
+        pad = tf.pad(img, paddings=paddings, mode='CONSTANT', constant_values=0)
+        img = pool_fn(pool_size=pool_size, strides=strides, padding='valid')(pad)
     else:
         raise NotImplementedError
-
-
-def soft_dilate3D(img, mode=0):
-    """
-    Soft-dilate operation on a float32 image
-    Args:
-        img : tf.tensor([float32])
-            Image to be soft dilated
-        mode : int
-            Refer to soft_dilate2D
-    Returns:
-        img : tf.tensor([float32])
-            Dilated image
-    """
-    if mode == 0:
-        return KL.MaxPool3D(pool_size=(3, 3, 3), strides=(1, 1, 1), padding='same')(img)
-    elif mode == 1:
-        pad = tf.pad(img, paddings=[[0,0], [1, 1], [1, 1], [1, 1], [0,0]], mode='REFLECT')
-        return KL.MaxPool3D(pool_size=(3, 3, 3), strides=(1, 1, 1), padding='valid')(pad)
-    elif mode == 2:
-        pad = tf.pad(img, paddings=[[0,0], [1, 1], [1, 1], [1, 1], [0,0]], mode='CONSTANT', constant_values=0)
-        return KL.MaxPool3D(pool_size=(3, 3, 3), strides=(1, 1, 1), padding='valid')(pad)
-    else:
-        raise NotImplementedError
-
-
-def soft_erode2D(img, mode=0):
-    """
-    Soft-erode operation on a float32 image
-    Args:
-        img : tf.tensor([float32])
-            Image to be soft eroded
-        mode : int
-            Refer to soft_dilate2D
-    Returns:
-        img : tf.tensor([float32])
-            Eroded image
-    """
-    return -soft_dilate2D(-img, mode=mode)
-
-
-def soft_erode3D(img, mode=0):
-    """
-    Soft-erode operation on a float32 image
-    Args:
-        img : tf.tensor([float32])
-            Image to be soft eroded
-        mode : int
-            Refer to soft_dilate2D
-    Returns:
-        img : tf.tensor([float32])
-            Eroded image
-    """
-    # changed to 3x3x3 to be compatible with dilation
-    return -soft_dilate3D(-img, mode=mode)
-
-
-def soft_open2D(img, mode=0):
-    """
-    Soft-open operation on a float32 image
-    Args:
-        img : tf.tensor([float32])
-            Image to be soft opened
-        mode : int
-            Refer to soft_dilate2D
-    Returns:
-        img : tf.tensor([float32])
-            Opened image
-    """
-    img = soft_erode2D(img , mode=mode)
-    img = soft_dilate2D(img, mode=mode)
+    
     return img
 
 
-def soft_open3D(img, mode=0):
+def soft_dilate2D(*args, **kwargs):
+    return soft_dilate(2, *args, **kwargs)
+
+
+def soft_dilate3D(*args, **kwargs):
+    return soft_dilate(3, *args, **kwargs)
+
+
+def soft_erode(dilate_fn, img, mode=def_mode):
+    """
+    Soft-erode operation on a float32 image
+    Parameters
+    ----------
+    img : tf.tensor([float32])
+        Image to be soft eroded
+    mode : int
+        Refer to soft_dilate2D
+    Returns
+    -------
+    img : tf.tensor([float32])
+        Eroded image
+    """
+    return -dilate_fn(-img, mode=mode)
+
+
+def soft_erode2D(*args, **kwargs):
+    return soft_erode(soft_dilate2D, *args, **kwargs)
+
+
+def soft_erode3D(*args, **kwargs):
+    return soft_erode(soft_dilate3D, *args, **kwargs)
+
+
+def soft_open(erode_fn, dilate_fn, img, mode=def_mode):
     """
     Soft-open operation on a float32 image
-    Args:
-        img : tf.tensor([float32])
-            Image to be soft opened
-        mode : int
-            Refer to soft_dilate2D
-    Returns:
-        img : tf.tensor([float32])
-            Opened image
+    Parameters
+    ----------
+    img : tf.tensor([float32])
+        Image to be soft opened
+    mode : int
+        Refer to soft_dilate2D
+    Returns
+    -------
+    img : tf.tensor([float32])
+        Opened image
     """
-    img = soft_erode3D(img , mode=mode)
-    img = soft_dilate3D(img, mode=mode)
+    img = erode_fn(img, mode=mode)
+    img = dilate_fn(img, mode=mode)
     return img
 
 
-def soft_skel2D(img, iters=-1, mode=0):
+def soft_open2D(*args, **kwargs):
+    return soft_open(soft_erode2D, soft_dilate2D, *args, **kwargs)
+
+
+def soft_open3D(*args, **kwargs):
+    return soft_open(soft_erode3D, soft_dilate3D, *args, **kwargs)
+
+
+def soft_skel(erode_fn, open_fn, img, iters=-1, mode=def_mode):
     """
     Soft-skeleton operation on a float32 image
-    Args:
-        img : tf.tensor([float32])
-            Image to be soft skeletoned
-        iters : int
-            Number of thinning iterations
-            Negative for infinite
-        mode : int
-            Refer to soft_dilate2D
-    Returns:
-        img : tf.tensor([float32])
-            Skeletoned image
+    Parameters
+    ----------
+    erode_fn : function
+        erosion function
+    open_fn : function
+        opening function
+    img : tf.tensor([float32])
+        Image to be soft Skeletonized
+    iters : int
+        Number of thinning iterations
+        Negative for infinite
+    mode : int
+        Refer to soft_dilate2D
+    Returns
+    -------
+    img : tf.tensor([float32])
+        Skeletonized image
     """
-    img1 = soft_open2D(img, mode=mode)
+    img1 = open_fn(img, mode=mode)
     skel = tf.nn.relu(img-img1)
 
     if iters < 0:
         # keras does not allow looping over something that isn't a tensor
         # compatible, so we're making a for loop instead
-        iters = tf.reduce_max(tf.shape(img))  # get max nb of iterations
+        iters = tf.reduce_max(tf.shape(img)) // 2  # get max nb of iterations
 
-    for i in range(iters):
+    for _ in range(iters):
         prev = tf.identity(img)
-        img = soft_erode2D(img, mode=mode)
+        img = erode_fn(img, mode=mode)
         if tf.reduce_all(tf.math.equal(prev, img)):
             break
-        img1 =  soft_open2D(img, mode=mode)
+        img1 =  open_fn(img, mode=mode)
         delta =  tf.nn.relu(img - img1)
         intersect = tf.math.multiply(skel, delta)
-        skel += tf.nn.relu(delta-intersect)
+        skel += tf.nn.relu(delta - intersect)
     
     return skel
 
 
-def soft_skel3D(img, iters=-1, mode=0):
-    """
-    Soft-skeleton operation on a float32 image
-    Args:
-        img : tf.tensor([float32])
-            Image to be soft skeletoned
-        iters : int
-            Number of thinning iterations
-            Negative for infinite
-        cls : slice
-            Slice of classes to skeletonize
-        mode : int
-            Refer to soft_dilate2D
-    Returns:
-        img : tf.tensor([float32])
-            Skeletoned image
-    """
-    img1 = soft_open3D(img, mode=mode)
-    skel = tf.nn.relu(img-img1)
+def soft_skel2D(*args, **kwargs):
+    return soft_skel(soft_erode2D, soft_open2D, *args, **kwargs)
 
-    if iters < 0:
-        iters = tf.reduce_max(tf.shape(img))  # get max nb of iterations
 
-    for i in range(iters):
-        prev = tf.identity(img)
-        img = soft_erode3D(img, mode=mode)
-        if tf.reduce_all(tf.math.equal(prev, img)):
-            break
-        img1 =  soft_open3D(img, mode=mode)
-        delta =  tf.nn.relu(img - img1)
-        intersect = tf.math.multiply(skel, delta)
-        skel += tf.nn.relu(delta-intersect)
-
-    return skel
+def soft_skel3D(*args, **kwargs):
+    return soft_skel(soft_erode3D, soft_open3D, *args, **kwargs)
 
 
 if __name__ == '__main__':
@@ -218,12 +180,12 @@ if __name__ == '__main__':
             y = tf.expand_dims(tf.convert_to_tensor(expected, dtype=tf.float32), 0)
             
             # same pad
-            self.assertTrue(tf.reduce_all(tf.math.equal(soft_erode2D(x[:, h], mode=0), y[:, h])))
-            self.assertTrue(tf.reduce_all(tf.math.equal(soft_erode3D(x      , mode=0), y)))
+            self.assertTrue(tf.reduce_all(tf.math.equal(soft_erode2D(img=x[:, h], mode=0), y[:, h])))
+            self.assertTrue(tf.reduce_all(tf.math.equal(soft_erode3D(img=x      , mode=0), y)))
 
             # reflect pad
-            self.assertTrue(tf.reduce_all(tf.math.equal(soft_erode2D(x[:, h], mode=1), y[:, h])))
-            self.assertTrue(tf.reduce_all(tf.math.equal(soft_erode3D(x      , mode=1), y)))
+            self.assertTrue(tf.reduce_all(tf.math.equal(soft_erode2D(img=x[:, h], mode=1), y[:, h])))
+            self.assertTrue(tf.reduce_all(tf.math.equal(soft_erode3D(img=x      , mode=1), y)))
 
         def test_dilate(self):
             x = self.__class__.tensor
@@ -234,12 +196,12 @@ if __name__ == '__main__':
             y = tf.expand_dims(tf.convert_to_tensor(expected, dtype=tf.float32), 0)
             
             # same pad
-            self.assertTrue(tf.reduce_all(tf.math.equal(soft_dilate2D(x[:, h], mode=0), y[:, h])))
-            self.assertTrue(tf.reduce_all(tf.math.equal(soft_dilate3D(x      , mode=0), y)))
+            self.assertTrue(tf.reduce_all(tf.math.equal(soft_dilate2D(img=x[:, h], mode=0), y[:, h])))
+            self.assertTrue(tf.reduce_all(tf.math.equal(soft_dilate3D(img=x      , mode=0), y)))
 
             # reflect pad
-            self.assertTrue(tf.reduce_all(tf.math.equal(soft_dilate2D(x[:, h], mode=1), y[:, h])))
-            self.assertTrue(tf.reduce_all(tf.math.equal(soft_dilate3D(x      , mode=1), y)))
+            self.assertTrue(tf.reduce_all(tf.math.equal(soft_dilate2D(img=x[:, h], mode=1), y[:, h])))
+            self.assertTrue(tf.reduce_all(tf.math.equal(soft_dilate3D(img=x      , mode=1), y)))
         
         def test_open(self):
             x = self.__class__.tensor
@@ -250,12 +212,12 @@ if __name__ == '__main__':
             y = tf.expand_dims(tf.convert_to_tensor(expected, dtype=tf.float32), 0)
             
             # same pad
-            self.assertTrue(tf.reduce_all(tf.math.equal(soft_open2D(x[:, h], mode=0), y[:, h])))
-            self.assertTrue(tf.reduce_all(tf.math.equal(soft_open3D(x      , mode=0), y)))
+            self.assertTrue(tf.reduce_all(tf.math.equal(soft_open2D(img=x[:, h], mode=0), y[:, h])))
+            self.assertTrue(tf.reduce_all(tf.math.equal(soft_open3D(img=x      , mode=0), y)))
             
             # reflect pad
-            self.assertTrue(tf.reduce_all(tf.math.equal(soft_open2D(x[:, h], mode=1), y[:, h])))
-            self.assertTrue(tf.reduce_all(tf.math.equal(soft_open3D(x      , mode=1), y)))
+            self.assertTrue(tf.reduce_all(tf.math.equal(soft_open2D(img=x[:, h], mode=1), y[:, h])))
+            self.assertTrue(tf.reduce_all(tf.math.equal(soft_open3D(img=x      , mode=1), y)))
         
         def test_skel(self):
             x = self.__class__.tensor
@@ -265,17 +227,17 @@ if __name__ == '__main__':
             y = tf.expand_dims(tf.convert_to_tensor(expected, dtype=tf.float32), 0)
 
             # same pad
-            self.assertTrue(tf.reduce_all(tf.math.equal(soft_skel2D(x[:, h], iters=0, mode=0), y[:, h])))
-            self.assertTrue(tf.reduce_all(tf.math.equal(soft_skel3D(x,       iters=0, mode=0), y)))
+            self.assertTrue(tf.reduce_all(tf.math.equal(soft_skel2D(img=x[:, h], iters=0, mode=0), y[:, h])))
+            self.assertTrue(tf.reduce_all(tf.math.equal(soft_skel3D(img=x,       iters=0, mode=0), y)))
 
             # reflect pad
-            self.assertTrue(tf.reduce_all(tf.math.equal(soft_skel2D(x[:, h], iters=0, mode=1), y[:, h])))
-            self.assertTrue(tf.reduce_all(tf.math.equal(soft_skel3D(x      , iters=0, mode=1), y)))
+            self.assertTrue(tf.reduce_all(tf.math.equal(soft_skel2D(img=x[:, h], iters=0, mode=1), y[:, h])))
+            self.assertTrue(tf.reduce_all(tf.math.equal(soft_skel3D(img=x      , iters=0, mode=1), y)))
             
     unittest.main()
 
-    
     # Visualization of clDice inner working
+    # (comment out `unittest.main()` to run)
     import matplotlib.pyplot as plt
     import numpy as np
     from skimage.filters import gaussian
