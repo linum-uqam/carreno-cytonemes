@@ -144,18 +144,21 @@ def soft_skel2D(img, iters=-1, mode=0):
     img1 = soft_open2D(img, mode=mode)
     skel = tf.nn.relu(img-img1)
 
-    i = iters
-    while i != 0:
+    if iters < 0:
+        # keras does not allow looping over something that isn't a tensor
+        # compatible, so we're making a for loop instead
+        iters = tf.reduce_max(tf.shape(img))  # get max nb of iterations
+
+    for i in range(iters):
         prev = tf.identity(img)
         img = soft_erode2D(img, mode=mode)
         if tf.reduce_all(tf.math.equal(prev, img)):
             break
-        img2 =  soft_open2D(img, mode=mode)
+        img1 =  soft_open2D(img, mode=mode)
         delta =  tf.nn.relu(img - img1)
         intersect = tf.math.multiply(skel, delta)
         skel += tf.nn.relu(delta-intersect)
-        i -= 1
-
+    
     return skel
 
 
@@ -179,8 +182,10 @@ def soft_skel3D(img, iters=-1, mode=0):
     img1 = soft_open3D(img, mode=mode)
     skel = tf.nn.relu(img-img1)
 
-    i = iters
-    while i != 0:
+    if iters < 0:
+        iters = tf.reduce_max(tf.shape(img))  # get max nb of iterations
+
+    for i in range(iters):
         prev = tf.identity(img)
         img = soft_erode3D(img, mode=mode)
         if tf.reduce_all(tf.math.equal(prev, img)):
@@ -189,7 +194,6 @@ def soft_skel3D(img, iters=-1, mode=0):
         delta =  tf.nn.relu(img - img1)
         intersect = tf.math.multiply(skel, delta)
         skel += tf.nn.relu(delta-intersect)
-        i -= 1
 
     return skel
 
