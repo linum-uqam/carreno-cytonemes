@@ -98,7 +98,7 @@ class CeDice(Dice):
 
 
 class ClDice(Dice):
-    def __init__(self, iters=10, ndim=2, mode=2, cls=slice(0, None), smooth=1.):
+    def __init__(self, iters=-1, ndim=2, mode=2, cls=slice(0, None), smooth=1.):
         """
         Compute clDice coefficient and loss.
         Parameters
@@ -111,15 +111,15 @@ class ClDice(Dice):
             Padding type
             Refer to carreno.nn.soft_skeleton.soft_dilate2D
         cls : slice
-            Class to consider for skeletonization
+            Slice of classes to consider for skeletonization
         smooth : float
             Smoothing factor added to numerator and denominator when dividing
         """
         assert ndim > 1 and ndim < 4, "Incompatible dimensions, expected between 2 and 3, got {}".format(ndim)
         super().__init__(smooth=smooth)
         self.iters = iters
-        self.cls = cls
         self.mode = mode
+        self.cls = cls
         self.skel_fn = soft_skel2D if ndim == 2 else soft_skel3D
     
     def coefficient(self, y_true, y_pred):
@@ -136,8 +136,8 @@ class ClDice(Dice):
         score : float
             clDice score
         """
-        skel_pred = self.skel_fn(y_pred, self.iters, mode=self.mode)
-        skel_true = self.skel_fn(y_true, self.iters, mode=self.mode)
+        skel_pred = self.skel_fn(y_pred[..., self.cls], self.iters, mode=self.mode)
+        skel_true = self.skel_fn(y_true[..., self.cls], self.iters, mode=self.mode)
         pres = (K.sum(tf.math.multiply(skel_pred, y_true))+self.smooth)/(K.sum(skel_pred)+self.smooth)    
         rec  = (K.sum(tf.math.multiply(skel_true, y_pred))+self.smooth)/(K.sum(skel_true)+self.smooth)
         return 2.0*(pres*rec)/(pres+rec)
@@ -163,7 +163,7 @@ class ClDice(Dice):
     loss.__name__ = "cldice_loss"
 
 class DiceClDice(ClDice):
-    def __init__(self, alpha=0.5, iters=10, ndim=2, mode=2, cls=slice(0, None), smooth=1):
+    def __init__(self, alpha=0.5, iters=-1, ndim=2, mode=2, cls=slice(0, None), smooth=1):
         """
         Compute Dice with clDice coefficient and loss
         Parameters

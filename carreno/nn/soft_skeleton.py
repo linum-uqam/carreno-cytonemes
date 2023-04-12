@@ -126,7 +126,7 @@ def soft_open3D(img, mode=0):
     return img
 
 
-def soft_skel2D(img, iters=-1, cls=slice(0, None), mode=0):
+def soft_skel2D(img, iters=-1, mode=0):
     """
     Soft-skeleton operation on a float32 image
     Args:
@@ -135,26 +135,23 @@ def soft_skel2D(img, iters=-1, cls=slice(0, None), mode=0):
         iters : int
             Number of thinning iterations
             Negative for infinite
-        cls : slice
-            Slice of classes to skeletonize
         mode : int
             Refer to soft_dilate2D
     Returns:
         img : tf.tensor([float32])
             Skeletoned image
     """
-    img1 = img[:, :, :, cls]
-    img2 = soft_open2D(img1, mode=mode)
-    skel = tf.nn.relu(img1-img2)
+    img1 = soft_open2D(img, mode=mode)
+    skel = tf.nn.relu(img-img1)
 
     i = iters
     while i != 0:
-        prev = tf.identity(img1)
-        img1 = soft_erode2D(img1, mode=mode)
-        if tf.reduce_all(tf.math.equal(prev, img1)):
+        prev = tf.identity(img)
+        img = soft_erode2D(img, mode=mode)
+        if tf.reduce_all(tf.math.equal(prev, img)):
             break
-        img2 =  soft_open2D(img1, mode=mode)
-        delta =  tf.nn.relu(img1 - img2)
+        img2 =  soft_open2D(img, mode=mode)
+        delta =  tf.nn.relu(img - img1)
         intersect = tf.math.multiply(skel, delta)
         skel += tf.nn.relu(delta-intersect)
         i -= 1
@@ -162,7 +159,7 @@ def soft_skel2D(img, iters=-1, cls=slice(0, None), mode=0):
     return skel
 
 
-def soft_skel3D(img, iters=-1, cls=slice(0, None), mode=0):
+def soft_skel3D(img, iters=-1, mode=0):
     """
     Soft-skeleton operation on a float32 image
     Args:
@@ -179,18 +176,17 @@ def soft_skel3D(img, iters=-1, cls=slice(0, None), mode=0):
         img : tf.tensor([float32])
             Skeletoned image
     """
-    img1 = img[:, :, :, :, cls]
-    img2 = soft_open3D(img1, mode=mode)
-    skel = tf.nn.relu(img1-img2)
+    img1 = soft_open3D(img, mode=mode)
+    skel = tf.nn.relu(img-img1)
 
     i = iters
     while i != 0:
-        prev = tf.identity(img1)
-        img1 = soft_erode3D(img1, mode=mode)
-        if tf.reduce_all(tf.math.equal(prev, img1)):
+        prev = tf.identity(img)
+        img = soft_erode3D(img, mode=mode)
+        if tf.reduce_all(tf.math.equal(prev, img)):
             break
-        img2 =  soft_open3D(img1, mode=mode)
-        delta =  tf.nn.relu(img1 - img2)
+        img1 =  soft_open3D(img, mode=mode)
+        delta =  tf.nn.relu(img - img1)
         intersect = tf.math.multiply(skel, delta)
         skel += tf.nn.relu(delta-intersect)
         i -= 1
@@ -271,10 +267,6 @@ if __name__ == '__main__':
             # reflect pad
             self.assertTrue(tf.reduce_all(tf.math.equal(soft_skel2D(x[:, h], iters=0, mode=1), y[:, h])))
             self.assertTrue(tf.reduce_all(tf.math.equal(soft_skel3D(x      , iters=0, mode=1), y)))
-
-            # slice class
-            self.assertTrue(tf.reduce_all(tf.math.equal(soft_skel2D(x[:, h], iters=0, cls=slice(1, None), mode=0), y[:, h, :, :, 1:])))
-            self.assertTrue(tf.reduce_all(tf.math.equal(soft_skel3D(x      , iters=0, cls=slice(1, None), mode=0), y[:, :, :, :, 1:])))
             
     unittest.main()
 
