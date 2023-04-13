@@ -110,7 +110,7 @@ def soft_open3D(*args, **kwargs):
     return soft_open(soft_erode3D, soft_dilate3D, *args, **kwargs)
 
 
-def soft_skel(erode_fn, open_fn, img, iters=-1, mode=def_mode):
+def soft_skel(erode_fn, open_fn, img, iters=10, mode=def_mode):
     """
     Soft-skeleton operation on a float32 image
     Parameters
@@ -123,7 +123,6 @@ def soft_skel(erode_fn, open_fn, img, iters=-1, mode=def_mode):
         Image to be soft Skeletonized
     iters : int
         Number of thinning iterations
-        Negative for infinite
     mode : int
         Refer to soft_dilate2D
     Returns
@@ -131,21 +130,15 @@ def soft_skel(erode_fn, open_fn, img, iters=-1, mode=def_mode):
     img : tf.tensor([float32])
         Skeletonized image
     """
+    assert iters >= 0
+    
     img1 = open_fn(img, mode=mode)
-    skel = tf.nn.relu(img-img1)
-
-    if iters < 0:
-        # keras does not allow looping over something that isn't a tensor
-        # compatible, so we're making a for loop instead
-        iters = tf.reduce_max(tf.shape(img)) // 2  # get max nb of iterations
-
-    for _ in range(iters):
-        prev = tf.identity(img)
+    skel = tf.nn.relu(img - img1)
+    
+    for i in range(iters):
         img = erode_fn(img, mode=mode)
-        if tf.reduce_all(tf.math.equal(prev, img)):
-            break
-        img1 =  open_fn(img, mode=mode)
-        delta =  tf.nn.relu(img - img1)
+        img1 = open_fn(img, mode=mode)
+        delta = tf.nn.relu(img - img1)
         intersect = tf.math.multiply(skel, delta)
         skel += tf.nn.relu(delta - intersect)
     

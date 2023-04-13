@@ -167,7 +167,7 @@ class Sweeper():
             'depth':    4,          # unet depth
             'nfeat':    64,         # nb feature for first conv layer
             'lr':       0.001,      # learning rate
-            'bsize':    64 if ndim == 3 else 3,  # batch size
+            'bsize':    64 if ndim == 2 else 3,  # batch size
             'scaler':   'norm',     # normalize or standardize
             'label':    'hard',     # hard or soft input
             'order':    'before',   # where to put batch norm
@@ -291,19 +291,20 @@ class Sweeper():
         optim = tf.keras.optimizers.Adam(learning_rate=schedule)
 
         dice       = mtc.Dice()
-        cedice     = mtc.CeDice()
-        cldice     = mtc.ClDice(    iters=10, ndim=self.params['ndim'], cls=slice(1,2))  # only skeletonize cyto
-        dicecldice = mtc.DiceClDice(iters=10, ndim=self.params['ndim'], cls=slice(1,2))
+        cldice     = mtc.ClDice(iters=10, ndim=self.params['ndim'], mode=2, cls=slice(1,2))  # only skeletonize cyto
+        dicecldice = mtc.DiceClDice(iters=10, ndim=self.params['ndim'], mode=2, cls=slice(1,2))
         loss_fn = dice.loss
-        if self.params['loss'] == "cedice":
-            loss_fn = cedice.loss
-        if self.params['loss'] == "cldice":
+        if self.params['loss'] == "dicecldice":
             loss_fn = dicecldice.loss
+        elif self.params['loss'] == "cedice":
+            loss_fn = mtc.CeDice().loss
+        elif self.params['loss'] == "adawing":
+            loss_fn = mtc.AdaptiveWingLoss().loss
 
         self.model.compile(optimizer=optim,
                            loss=loss_fn,
                            metrics=[dice.coefficient, cldice.coefficient, dicecldice.coefficient],
-                           sample_weight_mode="temporal")
+                           sample_weight_mode="temporal", run_eagerly=True)
 
         self.model.fit(self.train_gen,
                        validation_data=self.valid_gen,

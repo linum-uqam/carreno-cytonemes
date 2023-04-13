@@ -21,8 +21,8 @@ sweep_config = {
         'name': 'val_dicecldice'
     },
     'parameters': {
-        'lr':     {'value': 0.001},
-        'size':   {'value': 64},
+        'lr':     {'value': 0.01},
+        'bsize':  {'value': 32},
         'scaler': {'value': 'norm'},
         'label':  {'value': 'soft'},
         'order':  {'values': ['before', 'after']}

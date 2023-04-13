@@ -22,7 +22,7 @@ sweep_config = {
     },
     'parameters': {
         'lr':   {'values': [0.01, 0.005, 0.001, 0.0005, 0.0001]},
-        'bsize': {'values': [32, 64, 96, 128]}
+        'bsize': {'values': [32, 64, 96]}
     }
 }
 

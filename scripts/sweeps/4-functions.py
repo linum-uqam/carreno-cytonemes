@@ -15,19 +15,20 @@ from carreno.nn.generators import Generator
 sweep_config = {
     'method': 'grid',
     'name':   'sweep',
-    'project': 'unet2d_fonctions',
+    'project': 'unet2d_functions',
     'metric': {
         'goal': 'maximize',
         'name': 'val_dicecldice'
     },
     'parameters': {
-        'lr':     {'value': 0.001},
-        'size':   {'value': 64},
+        'lr':     {'value': 0.01},
+        'bsize':  {'value': 32},
         'scaler': {'value': 'norm'},
         'label':  {'value': 'soft'},
-        'order':  {'value': 'after'},
-        'act':    {'values': ["relu", "leaky_relu", "elu", "gelu"]},
-        'loss':   {'values': ["dice", "bce_dice", "cldice"]}
+        'order':  {'value': 'before'},
+        'act':    {'values': ['relu', 'leaky_relu', 'elu', 'gelu']},
+        'topact': {'values': ['relu', 'softmax']},
+        'loss':   {'values': ['dice', 'cedice', 'dicecldice', 'adawing']}
     }
 }
 

@@ -21,11 +21,13 @@ sweep_config = {
         'name': 'val_dicecldice'
     },
     'parameters': {
-        'lr':     {'value': 0.001},
-        'size':   {'value': 64},
+        'lr':     {'value': 0.01},
+        'size':   {'value': 32},
         'scaler': {'value': 'norm'},
         'label':  {'value': 'soft'},
-        'order':  {'value': 'after'},
+        'order':  {'value': 'before'},
+        'backbone': {'value': 'vgg16'},
+        'pretrn': {'value': True},
         'ncolor': {'values': [1, 3]}
     }
 }

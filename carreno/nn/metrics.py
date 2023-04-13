@@ -94,11 +94,11 @@ class CeDice(Dice):
         # cannot use dice loss function with `super` since coefficient function is overridden
         return self.dice.loss(y_true, y_pred) + self.ce(y_true, y_pred)
 
-    loss.__name__ = "cddice_loss"
+    loss.__name__ = "cedice_loss"
 
 
 class ClDice(Dice):
-    def __init__(self, iters=-1, ndim=2, mode=2, cls=slice(0, None), smooth=1.):
+    def __init__(self, iters=10, ndim=2, mode=2, cls=slice(0, None), smooth=1.):
         """
         Compute clDice coefficient and loss.
         Parameters
@@ -136,11 +136,14 @@ class ClDice(Dice):
         score : float
             clDice score
         """
-        skel_pred = self.skel_fn(y_pred[..., self.cls], self.iters, mode=self.mode)
-        skel_true = self.skel_fn(y_true[..., self.cls], self.iters, mode=self.mode)
-        pres = (K.sum(tf.math.multiply(skel_pred, y_true))+self.smooth)/(K.sum(skel_pred)+self.smooth)    
-        rec  = (K.sum(tf.math.multiply(skel_true, y_pred))+self.smooth)/(K.sum(skel_true)+self.smooth)
-        return 2.0*(pres*rec)/(pres+rec)
+        y_pred_sample = y_pred[..., self.cls]
+        y_true_sample = y_true[..., self.cls]
+        skel_pred = self.skel_fn(img=y_pred_sample, iters=self.iters, mode=self.mode)
+        skel_true = self.skel_fn(img=y_true_sample, iters=self.iters, mode=self.mode)
+        pres = (K.sum(tf.math.multiply(skel_pred, y_true_sample))+self.smooth)/(K.sum(skel_pred)+self.smooth)    
+        rec  = (K.sum(tf.math.multiply(skel_true, y_pred_sample))+self.smooth)/(K.sum(skel_true)+self.smooth)
+        coef = 2.0*(pres*rec)/(pres+rec)
+        return coef
     
     coefficient.__name__ = "cldice"
 
@@ -163,7 +166,7 @@ class ClDice(Dice):
     loss.__name__ = "cldice_loss"
 
 class DiceClDice(ClDice):
-    def __init__(self, alpha=0.5, iters=-1, ndim=2, mode=2, cls=slice(0, None), smooth=1):
+    def __init__(self, alpha=0.5, iters=10, ndim=2, mode=2, cls=slice(0, None), smooth=1):
         """
         Compute Dice with clDice coefficient and loss
         Parameters

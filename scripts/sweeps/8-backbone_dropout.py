@@ -21,14 +21,17 @@ sweep_config = {
         'name': 'val_dicecldice'
     },
     'parameters': {
-        'lr':      {'value': 0.001},
-        'size':    {'value': 64},
-        'scaler':  {'value': 'norm'},
-        'label':   {'value': 'soft'},
-        'order':   {'value': 'after'},
-        'ncolor':  {'value': 3},
-        'act':     {'value': "relu"},
-        'loss':    {'value': "cldice"},
+        'lr':     {'value': 0.01},
+        'size':   {'value': 32},
+        'scaler': {'value': 'norm'},
+        'label':  {'value': 'soft'},
+        'order':  {'value': 'before'},
+        'backbone': {'value': 'vgg16'},
+        'pretrn': {'value': True},
+        'ncolor': {'value': 3},
+        'act':    {'value': 'relu'},
+        'topact': {'value': 'softmax'},
+        'loss':   {'value': 'dicecldice'},
         'dropout': {'values': [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]}
     }
 }
