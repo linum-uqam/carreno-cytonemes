@@ -287,12 +287,23 @@ def UNet(shape, n_class=3, depth=4, n_feat=64, dropout=0.3, norm_order=0,
     
     current_layer = layers.ConvXD(filters=n_class,
                            kernel_size=1,
-                           activation=top_activation,
                            padding="same")(current_layer)
     
-    # normalizing output won't change much for softmax, but it really
-    # matters for relu since its output range goes to infinity n beyond
-    output = tf.keras.layers.UnitNormalization()(current_layer)
+    output = layers.Activation(top_activation)(current_layer)
+    
+    if top_activation == 'relu':
+        # Based on SoftSeg normalisation of ReLU output
+        # https://ivadomed.org/_modules/ivadomed/models.html#Unet
+        # Important since ReLU output range goes to infinity n beyond
+        normalize = output / tf.reduce_max(output)
+        
+        # handle division by 0
+        output = tf.where(tf.math.is_nan(normalize), tf.zeros_like(normalize), normalize)
+
+        if n_class > 0:
+            all_sums = tf.expand_dims(tf.reduce_sum(output, axis=-1), axis=-1)
+            all_sums = tf.where(all_sums == 0, tf.ones_like(all_sums), all_sums)
+            output = output / all_sums
 
     model = tf.keras.Model(input, output)
 
@@ -355,6 +366,8 @@ if __name__ == '__main__':
                 pred = model.predict(tf.convert_to_tensor(np.stack([x]*3)), verbose=0)
                 self.assertGreaterEqual(np.round(tf.reduce_min(pred).numpy(), 5), 0)
                 self.assertLessEqual(   np.round(tf.reduce_max(pred).numpy(), 5), 1)
+                #self.assertEqual(       np.round(tf.reduce_sum(pred[0]).numpy(), 5), np.prod(ys.shape))
+                self.assertEqual(       np.round(tf.reduce_sum(pred, axis=-1).numpy()[tuple([0]*(ys.ndim-1))], 5), 1)
             except Exception as e:
                 self.fail("Prediction failed : {}".format(e))
             

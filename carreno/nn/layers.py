@@ -230,3 +230,64 @@ def model2D_to_3D(model, inp_ndim=64):
         nmodel.layers[i].set_weights(model.layers[i].get_weights())
 
     return nmodel
+
+
+class NormalizeRange(tf.keras.layers.Layer):
+    def __init__(self, vmin=0, vmax=1, axis=-1):
+        """
+        Linear normalization layer for axis -1
+        Parameters
+        ----------
+        vmin : float
+            Min value
+        vmin : float
+            Min value
+        """
+        assert vmin <= vmax
+        super().__init__()
+        self.vmin = vmin
+        self.diff = vmax - vmin
+        self.axis = -1
+        
+    def call(self, inputs):
+        """
+        Linear normalization layer for axis -1
+        Parameters
+        ----------
+        inputs : tf.tensor
+            Layer input
+        Returns
+        -------
+        normalized : tf.tensor
+            Normalized input
+        """
+        all_mins = tf.reduce_min(inputs, axis=self.axis)
+        inp_at_0 = inputs - tf.expand_dims(all_mins, axis=self.axis)
+        all_sums = tf.reduce_sum(inp_at_0, axis=self.axis)
+        rm_all_0 = tf.where(all_sums == 0, tf.ones_like(all_sums), all_sums)
+        ratios   = self.diff / rm_all_0
+        normalized = (inp_at_0 * tf.expand_dims(ratios, axis=self.axis)) + self.vmin
+        return normalized
+
+
+if __name__ == "__main__":
+    import unittest
+
+    class TestLayers(unittest.TestCase):
+        def test_norm(self):
+            x = np.array([[[1,2,3], [-1, -2, -3], [0, 0.5, 1], [0, 0, 0]]])
+            batch = tf.convert_to_tensor(np.expand_dims(x, axis=0), dtype=tf.float32)
+            
+            # between 0 and 1
+            layer = NormalizeRange(vmin=0, vmax=1, axis=-1)
+            result = layer(batch).numpy()
+            self.assertEqual(np.round(result.sum(), 5), 3)
+            self.assertEqual(np.round(result[0,0,0].sum(), 5), 1)
+
+            # between -1 and 1
+            layer = NormalizeRange(vmin=0, vmax=1, axis=-1)
+            result = layer(batch).numpy()
+            self.assertEqual(np.round(result.sum(), 5), 3)
+            self.assertEqual(np.round(result[0,0,0].sum(), 5), 1)
+
+    unittest.main()
