@@ -130,11 +130,15 @@ def soft_skel(erode_fn, open_fn, img, iters=10, mode=def_mode):
     img : tf.tensor([float32])
         Skeletonized image
     """
-    assert iters >= 0
+    assert iters >= 0, "Nb of iterations must be higher than 0."
     
     img1 = open_fn(img, mode=mode)
     skel = tf.nn.relu(img - img1)
     
+    # Tried and failed to add a check for if there was anything left
+    # to erode before looping again, but keras requires specific loop
+    # format for optimisation. We can't use break statement and loop
+    # condition seems tricky.
     for i in range(iters):
         img = erode_fn(img, mode=mode)
         img1 = open_fn(img, mode=mode)
