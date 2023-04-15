@@ -413,7 +413,6 @@ if __name__ == '__main__':
             self.assertEqual(n_trainable_after, n_trainable)
         
         def test_relu_output(self):
-            # will not work when using CategoricalCrossentropy loss
             self.train_n_pred(shape=[32,32,1], n_class=3, depth=2, n_feat=8, backbone=None, top_activation='relu')
     
     unittest.main()
