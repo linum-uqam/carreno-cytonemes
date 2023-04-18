@@ -231,7 +231,7 @@ class DiceClDice(ClDice):
 
 
 class AdaptiveWingLoss():
-    def __init__(self, alpha=float(2.1), omega=float(5), epsilon=float(1),theta=float(0.5)):
+    def __init__(self, alpha=float(2.1), omega=float(5), epsilon=float(1), theta=float(0.5)):
         """
         Adaptive Wing loss. Used for heatmap ground truth.
         Suggested by SoftSeg article for non polarized region edges compared to Dice.
@@ -284,6 +284,64 @@ class AdaptiveWingLoss():
                         A * dif - C,
                         self.omega * tf.math.log(1 + dif / self.epsilon ** amt))
         return tf.reduce_mean(loss)
+
+
+class ClDiceAdaptiveWingLoss(ClDice, AdaptiveWingLoss):
+    def __init__(self, iters=10, ndim=2, mode=2, cls=slice(0, None),
+                 smooth=1, alpha=float(2.1), omega=float(5), epsilon=float(1), theta=float(0.5)):
+        """
+        Adaptive Wing loss. Used for heatmap ground truth.
+        Suggested by SoftSeg article for non polarized region edges compared to Dice.
+
+        Code based on https://github.com/SerdarHelli/TensorflowWorks/blob/main/Losses/Adaptive_Wing_Loss.py
+        Parameters
+        ----------
+        iters : int
+            Skeletonization iteration
+        ndim : int
+            Number of dimensions for data (not including feature channels)
+        mode : int
+            Padding type
+            Refer to carreno.nn.soft_skeleton.soft_dilate2D
+        cls : slice
+            Class to consider for skeletonization
+        smooth : float
+            Smoothing factor added to numerator and denominator when dividing
+        alpha : float
+            Used to adapt loss shape to input shape and make loss smooth at 0 (background).
+            It needs to be slightly above 2 to maintain ideal properties.
+        omega : float
+            Multiplicating factor for non linear part of the loss.
+        epsilon : float
+            factor to avoid gradient explosion. It must not be too small
+        theta : float
+            Threshold between linear and non linear loss.
+        Returns
+        -------
+        metric_function : function
+            Function to calculate Dice score between target and prediction
+        """
+        self.adawing = AdaptiveWingLoss(alpha=alpha, omega=omega, epsilon=epsilon, theta=theta)
+        self.cldice = ClDice(iters=iters, ndim=ndim, cls=cls, mode=mode, smooth=smooth)
+
+    def coefficient(self, y_true, y_pred):
+        raise NotImplementedError
+
+    def loss(self, y_true, y_pred):
+        """
+        Adaptive Wing loss between 0 (best) and infinity (worst).
+        Parameters
+        ----------
+        y_true : tf.Tensor
+            Target tensor
+        y_pred : tf.Tensor
+            Prediction tensor
+        Returns
+        -------
+        loss : float
+            Adaptive Wing loss
+        """
+        return self.cldice.loss(y_true=y_true, y_pred=y_pred) + self.adawing.loss(y_true=y_true, y_pred=y_pred)
     
 
 if __name__ == "__main__":
@@ -324,7 +382,7 @@ if __name__ == "__main__":
             p = tf.expand_dims(tf.convert_to_tensor(img,  dtype=tf.float32), axis=0)
             
             for m in range(3):
-                cldice = ClDice(iters=-1, ndim=2, mode=m, smooth=1e-5)
+                cldice = ClDice(iters=5, ndim=2, mode=m, smooth=1e-5)
                 coef = cldice.coefficient
                 loss = cldice.loss
 
@@ -345,7 +403,7 @@ if __name__ == "__main__":
             p2 = tf.expand_dims(tf.convert_to_tensor(1-skel, dtype=tf.float32), axis=0)
             
             for m in range(3):
-                dicecldice = DiceClDice(alpha=0.5, iters=-1, ndim=2, mode=m, smooth=1e-5)
+                dicecldice = DiceClDice(alpha=0.5, iters=5, ndim=2, mode=m, smooth=1e-5)
                 coef = dicecldice.coefficient
                 loss = dicecldice.loss
 
@@ -367,6 +425,20 @@ if __name__ == "__main__":
 
             # loss
             self.assertLessEqual(1, loss(y, p).numpy())
+            self.assertEqual(0, loss(y, y).numpy())
+        
+        def test_ClDiceAdaWing(self):
+            img = np.stack([np.zeros((5,5)), np.zeros((5,5))], axis=-1)
+            skel = img.copy()
+            skel[:, 2, :] = [0,1]
+            y =  tf.expand_dims(tf.convert_to_tensor(skel,   dtype=tf.float32), axis=0)
+            p1 = tf.expand_dims(tf.convert_to_tensor(1-img,  dtype=tf.float32), axis=0)
+            p2 = tf.expand_dims(tf.convert_to_tensor(1-skel, dtype=tf.float32), axis=0)
+            adawing = ClDiceAdaptiveWingLoss(ndim=2)
+            loss = adawing.loss
+
+            # loss
+            self.assertGreaterEqual(round(loss(y, p2).numpy(), 5), 1)
             self.assertEqual(0, loss(y, y).numpy())
 
     unittest.main()

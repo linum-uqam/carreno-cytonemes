@@ -149,7 +149,7 @@ def augmentations(shape, norm_or_std, is_2D, n_color_ch):
 
 
 class Sweeper():
-    def __init__(self, config):
+    def __init__(self, config, ndim=2, wandb_artifact=True):
         """
         Setup sweeps for wandb.
         Parameters
@@ -157,10 +157,15 @@ class Sweeper():
         config : dict
             Sweeps configuration.
             Refer to Wandb for format https://docs.wandb.ai/guides/sweeps/define-sweep-configuration
+        ndim : int
+            Number of dimensions for input (2 or 3)
+        wandb_artifact : bool
+            Save wandb artifacts during training and evaluation.
         """
         self.prj_config = get_config()
         self.swp_config = config
         ndim = 2
+        self.wandb_artifact = wandb_artifact
         self.params = {
             'ndim':     ndim,       # 2 or 3
             'shape':    [1 if ndim == 2 else 48, 96, 96],  # data shape
@@ -175,7 +180,7 @@ class Sweeper():
             'act':      'relu',     # activation
             'loss':     'dice',     # loss function
             'topact':   'softmax',  # top activation
-            'dropout':  0.0,        # dropout rate
+            'dropout':  0.3,        # dropout rate
             'backbone': 'base',     # base or unet
             'pretrn':   False,      # pretrained on imagenet
             'dupe':     48          # number of data duplication to fit batch size
@@ -202,11 +207,14 @@ class Sweeper():
                           depth=self.params['depth'],
                           n_feat=self.params['nfeat'],
                           dropout=self.params['dropout'],
-                          batch_norm=self.params['order'],
+                          norm_order=self.params['order'],
                           activation=self.params['act'],
                           top_activation=self.params['topact'],
                           backbone=backbone,
                           pretrained=self.params['pretrn'])
+
+        if not backbone is None:
+            encoder_trainable(self.model, False)
 
         self.model.summary()
 
@@ -278,46 +286,71 @@ class Sweeper():
                                                       patience=10,
                                                       restore_best_weights=True,
                                                       verbose=1)
-        wandb_checkpoint = wandb.keras.WandbModelCheckpoint(filepath=model_path,
+        metrics_logger   = wandb.keras.WandbMetricsLogger()
+        if self.wandb_artifact:
+            checkpoint = wandb.keras.WandbModelCheckpoint(filepath=model_path,
+                                                          monitor='val_dicecldice',
+                                                          mode='max',
+                                                          save_best_only=True,
+                                                          save_weights_only=False,
+                                                          verbose=1)
+        else:
+            checkpoint = tf.keras.callbacks.ModelCheckpoint(filepath=model_path,
                                                             monitor='val_dicecldice',
                                                             mode='max',
                                                             save_best_only=True,
                                                             save_weights_only=False,
                                                             verbose=1)
-        metrics_logger   = wandb.keras.WandbMetricsLogger()
 
         total_steps = len(self.train_gen) * self.prj_config['TRAINING']['epoch']
         schedule = tf.keras.optimizers.schedules.CosineDecay(self.params['lr'], decay_steps=total_steps)
         optim = tf.keras.optimizers.Adam(learning_rate=schedule)
 
+        iters = 10
+        ndim  = ndim=self.params['ndim']
+        pad   = 2
+        cls   = slice(1,2)  # only skeletonize cyto (tried, but gives awful result for cldice)
         dice       = mtc.Dice()
-        cldice     = mtc.ClDice(iters=10, ndim=self.params['ndim'], mode=2, cls=slice(1,2))  # only skeletonize cyto
-        dicecldice = mtc.DiceClDice(iters=10, ndim=self.params['ndim'], mode=2, cls=slice(1,2))
-        loss_fn = dice.loss
-        if self.params['loss'] == "dicecldice":
+        cldice     = mtc.ClDice(    iters=iters, ndim=ndim, mode=pad)
+        dicecldice = mtc.DiceClDice(iters=iters, ndim=ndim, mode=pad)
+        if self.params['loss'] == "dice":
+            loss_fn = dice.loss
+        elif self.params['loss'] == "dicecldice":
             loss_fn = dicecldice.loss
         elif self.params['loss'] == "cedice":
             loss_fn = mtc.CeDice().loss
         elif self.params['loss'] == "adawing":
             loss_fn = mtc.AdaptiveWingLoss().loss
+        elif self.params['loss'] == "cldiceadawing":
+            loss_fn = mtc.ClDiceAdaptiveWingLoss(iters=iters, ndim=ndim, mode=pad).loss
+        else:
+            raise NotImplementedError
 
-        self.model.compile(optimizer=optim,
-                           loss=loss_fn,
-                           metrics=[dice.coefficient, cldice.coefficient, dicecldice.coefficient],
-                           sample_weight_mode="temporal", run_eagerly=True)
+        def compile_n_fit():
+            self.model.compile(optimizer=optim,
+                               loss=loss_fn,
+                               metrics=[dice.coefficient, cldice.coefficient, dicecldice.coefficient],
+                               sample_weight_mode="temporal", run_eagerly=True)
 
-        self.model.fit(self.train_gen,
-                       validation_data=self.valid_gen,
-                       steps_per_epoch=len(self.train_gen),
-                       validation_steps=len(self.valid_gen),
-                       batch_size=self.params['bsize'],
-                       epochs=self.prj_config['TRAINING']['epoch'],
-                       verbose=1,
-                       callbacks=[
-                           early_stop,
-                           wandb_checkpoint,
-                           metrics_logger
-                       ])
+            self.model.fit(self.train_gen,
+                           validation_data=self.valid_gen,
+                           steps_per_epoch=len(self.train_gen),
+                           validation_steps=len(self.valid_gen),
+                           batch_size=self.params['bsize'],
+                           epochs=self.prj_config['TRAINING']['epoch'],
+                           verbose=1,
+                           callbacks=[
+                               early_stop,
+                               checkpoint,
+                               metrics_logger
+                           ])
+        
+        compile_n_fit()
+        
+        if not backbone is None:
+            # train encoder
+            encoder_trainable(self.model, True)
+            compile_n_fit()
 
         print("############")
         print("# EVALUATE #")
