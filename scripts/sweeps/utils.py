@@ -6,6 +6,7 @@ import numpy as np
 import random
 import wandb
 import tensorflow as tf
+from sklearn.model_selection import train_test_split
 from pathlib import Path
 import carreno.processing.transforms as tfs
 import carreno.nn.metrics as mtc
@@ -175,6 +176,7 @@ class Sweeper():
             'bsize':    64 if ndim == 2 else 3,  # batch size
             'scaler':   'norm',     # normalize or standardize
             'label':    'hard',     # hard or soft input
+            'weight':   True,       # use class weights for unbalanced data
             'order':    'before',   # where to put batch norm
             'ncolor':   1,          # color depth for input
             'act':      'relu',     # activation
@@ -183,6 +185,7 @@ class Sweeper():
             'dropout':  0.3,        # dropout rate
             'backbone': 'base',     # base or unet
             'pretrn':   False,      # pretrained on imagenet
+            'slftrn':   False,      # self train on unlabeled data
             'dupe':     48          # number of data duplication to fit batch size
         }
     
@@ -227,20 +230,35 @@ class Sweeper():
         hard_label = self.params['label'] == 'hard'
         x_train = fullpath(self.prj_config['VOLUME']['input'],  trn)
         y_train = fullpath(self.prj_config['VOLUME']['target' if hard_label else 'soft_target'], trn)
-        w_train = fullpath(self.prj_config['VOLUME']['weight' if hard_label else 'soft_weight'], trn)
+        w_train = fullpath(self.prj_config['VOLUME']['weight' if hard_label else 'soft_weight'], trn) if self.params['weight'] else None
         x_valid = fullpath(self.prj_config['VOLUME']['input'],  vld)
         y_valid = fullpath(self.prj_config['VOLUME']['target'], vld)
         x_test  = fullpath(self.prj_config['VOLUME']['input'],  tst)
         y_test  = fullpath(self.prj_config['VOLUME']['target'], tst)
 
         print("Training dataset")
-        print("-nb of instances :", len(x_train), "/", len(y_train), "/", len(w_train))
+        if self.params['weight']:
+            print("-nb of instances :", len(x_train), "/", len(y_train), "/", len(w_train))
+        else:
+            print("-nb of instances :", len(x_train), "/", len(y_train))
 
         print("Validation dataset")
         print("-nb of instances :", len(x_valid), "/", len(y_valid))
 
         print("Testing dataset")
         print("-nb of instances :", len(x_test), "/",  len(y_test))
+
+        if self.params['slftrn']:
+            files = os.listdir(self.prj_config['VOLUME']['unlabeled'])
+            x_slftrn = fullpath(self.prj_config['VOLUME']['unlabeled'],
+                                files)
+            y_slftrn = fullpath(self.prj_config['VOLUME']['threshold'],
+                                files)
+            w_slftrn = fullpath(self.prj_config['VOLUME']['threshold_weight'],
+                                files)
+            print("Unlabeled dataset")
+            print("-nb of instances :", len(x_test), "/",  len(y_test))
+            
 
         # setup data augmentation
         train_aug, test_aug = augmentations(shape=self.params['shape'],
@@ -257,10 +275,10 @@ class Sweeper():
                                    shuffle=True)
         self.valid_gen = Generator(x_valid,
                                    y_valid,
-                                   weight=None,   # not used for validation since it would cause a bias on best saved model
+                                   weight=None,    # not used for validation since it would cause a bias on best saved model
                                    size=self.params['bsize'],
                                    augmentation=test_aug,
-                                   shuffle=True)  # I'm kind of torn on putting shuffle on validation data, but otherwise, the extra patches are never used  
+                                   shuffle=False)  # make sure all patches fit in epoch
         self.test_gen  = Generator(x_test,
                                    y_test,
                                    weight=None,
@@ -268,9 +286,17 @@ class Sweeper():
                                    augmentation=test_aug,
                                    shuffle=False)
         
-        print("############")
-        print("# TRAINING #")
-        print("############")
+        if self.params['slftrn']:
+            self.unlabel_gen = Generator(x_slftrn,
+                                         y_slftrn,
+                                         weight=w_slftrn,
+                                         size=self.params['bsize'],
+                                         augmentation=train_aug,
+                                         shuffle=True)
+        
+        print("#############")
+        print("# CALLBACKS #")
+        print("#############")
 
         # adding "{epoch:02d}-{val_dice:.2f}" to model name is recommended to make it unique
         # but it saves so many different instances of the model...
@@ -326,31 +352,50 @@ class Sweeper():
         else:
             raise NotImplementedError
 
-        def compile_n_fit():
-            self.model.compile(optimizer=optim,
+        def compile_n_fit(train_gen, valid_gen, optimizer, initial_epoch=0, log=True):
+            self.model.compile(optimizer=optimizer,
                                loss=loss_fn,
                                metrics=[dice.coefficient, cldice.coefficient, dicecldice.coefficient],
                                sample_weight_mode="temporal", run_eagerly=True)
+            
+            callbacks = [early_stop] + ([checkpoint, metrics_logger] if log else [])
+            
+            return self.model.fit(train_gen,
+                                  validation_data=valid_gen,
+                                  steps_per_epoch=len(train_gen),
+                                  validation_steps=len(valid_gen),
+                                  batch_size=self.params['bsize'],
+                                  epochs=self.prj_config['TRAINING']['epoch'],
+                                  initial_epoch=initial_epoch,
+                                  callbacks=callbacks,
+                                  verbose=1)
 
-            self.model.fit(self.train_gen,
-                           validation_data=self.valid_gen,
-                           steps_per_epoch=len(self.train_gen),
-                           validation_steps=len(self.valid_gen),
-                           batch_size=self.params['bsize'],
-                           epochs=self.prj_config['TRAINING']['epoch'],
-                           verbose=1,
-                           callbacks=[
-                               early_stop,
-                               checkpoint,
-                               metrics_logger
-                           ])
-        
-        compile_n_fit()
+        if self.params['slftrn']:
+            print("##############")
+            print("# SELF-TRAIN #")
+            print("##############")
+            other_schedule = tf.keras.optimizers.schedules.CosineDecay(self.params['lr'], decay_steps=total_steps)
+            other_optim    = tf.keras.optimizers.Adam(learning_rate=schedule)
+            compile_n_fit(self.unlabel_gen,
+                          self.valid_gen,
+                          optimizer=other_optim,
+                          log=False)
+
+        print("############")
+        print("# TRAINING #")
+        print("############")
+
+        hist = compile_n_fit(self.train_gen,
+                             self.valid_gen,
+                             optimizer=optim)
         
         if not backbone is None:
             # train encoder
             encoder_trainable(self.model, True)
-            compile_n_fit()
+            compile_n_fit(self.train_gen,
+                          self.valid_gen,
+                          optimizer=optim,
+                          initial_epoch=len(hist.history['loss']))
 
         print("############")
         print("# EVALUATE #")

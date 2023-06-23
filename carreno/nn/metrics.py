@@ -285,6 +285,8 @@ class AdaptiveWingLoss():
                         self.omega * tf.math.log(1 + dif / self.epsilon ** amt))
         return tf.reduce_mean(loss)
 
+    loss.__name__ = "adawing_loss"
+
 
 class ClDiceAdaptiveWingLoss(ClDice, AdaptiveWingLoss):
     def __init__(self, iters=10, ndim=2, mode=2, cls=slice(0, None),
@@ -343,6 +345,8 @@ class ClDiceAdaptiveWingLoss(ClDice, AdaptiveWingLoss):
         """
         return self.cldice.loss(y_true=y_true, y_pred=y_pred) + self.adawing.loss(y_true=y_true, y_pred=y_pred)
     
+    loss.__name__ = "adawingcldice_loss"
+
 
 if __name__ == "__main__":
     import numpy as np

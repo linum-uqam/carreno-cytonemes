@@ -16,3 +16,4 @@ patchify
 pyyaml
 plantuml
 wandb
+streamlit

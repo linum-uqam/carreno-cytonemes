@@ -5,6 +5,18 @@ import wandb
 import utils
 
 sweep_configs = {
+    0 : {
+        'method': 'grid',
+        'name':   'sweep',
+        'project': 'unet2d_class_weight',
+        'metric': {
+            'goal': 'maximize',
+            'name': 'val_dicecldice'
+        },
+        'parameters': {
+            'weight': {'values': [False, True]}
+        }
+    },
     1 : {
         'method': 'grid',
         'name':   'sweep',
@@ -98,7 +110,7 @@ sweep_configs = {
         },
         'parameters': {
             'lr':     {'value': 0.001},
-            'size':   {'value': 32},
+            'bsize':  {'value': 32},
             'scaler': {'value': 'std'},
             'label':  {'value': 'soft'},
             'order':  {'value': 'after'},
@@ -109,12 +121,59 @@ sweep_configs = {
             'pretrn': {'value': True},
             'ncolor': {'values': [1, 3]}
         }
+    },
+    7 : {
+        'method': 'grid',
+        'name':   'sweep',
+        'project': 'unet2d_bigger_input',
+        'metric': {
+            'goal': 'maximize',
+            'name': 'val_dicecldice'
+        },
+        'parameters': {
+            'lr':     {'value': 0.001},
+            'bsize':  {'values': [8, 32]},
+            'shape':  {'values': [(1, 96, 96), (1, 192, 192)]},
+            'scaler': {'value': 'std'},
+            'label':  {'value': 'soft'},
+            'order':  {'value': 'after'},
+            'act':    {'value': 'relu'},
+            'topact': {'value': 'relu'},
+            'loss':   {'value': 'cldiceadawing'},
+            'backbone': {'value': 'vgg16'},
+            'pretrn': {'value': True},
+            'ncolor': {'value': 3}
+        }
+    },
+    8 : {
+        'method': 'grid',
+        'name':   'sweep',
+        'project': 'unet2d_self_trained',
+        'metric': {
+            'goal': 'maximize',
+            'name': 'val_dicecldice'
+        },
+        'parameters': {
+            'lr':     {'value': 0.001},
+            'bsize':  {'value': 8},
+            'shape':  {'value': (1, 192, 192)},
+            'scaler': {'value': 'std'},
+            'label':  {'value': 'soft'},
+            'order':  {'value': 'after'},
+            'act':    {'value': 'relu'},
+            'topact': {'value': 'relu'},
+            'loss':   {'value': 'cldiceadawing'},
+            'backbone': {'value': 'vgg16'},
+            'pretrn': {'value': True},
+            'ncolor': {'value': 3},
+            'slftrn': {'values': [False, True]}
+        }
     }
 }
 
 
 def main():
-    current_test = 6
+    current_test = 0
     sweep_config = sweep_configs[current_test]
     sweep_id = wandb.sweep(sweep_config)
     sweeper = utils.Sweeper(sweep_config)
