@@ -6,12 +6,14 @@ import numpy as np
 import random
 import wandb
 import tensorflow as tf
+from skimage.restoration import estimate_sigma
 from sklearn.model_selection import train_test_split
 from pathlib import Path
 import carreno.processing.transforms as tfs
 import carreno.nn.metrics as mtc
 from carreno.nn.unet import UNet, encoder_trainable
 from carreno.nn.generators import Generator
+from carreno.pipeline.pipeline import Threshold, UNet2D, UNet3D
 
 
 def get_config(path='config.yml'):
@@ -149,7 +151,7 @@ def augmentations(shape, norm_or_std, is_2D, n_color_ch):
     return train_aug, test_aug
 
 
-class Sweeper():
+class UNetSweeper():
     def __init__(self, config, ndim=2, wandb_artifact=True):
         """
         Setup sweeps for wandb.
@@ -173,7 +175,7 @@ class Sweeper():
             'depth':    4,          # unet depth
             'nfeat':    64,         # nb feature for first conv layer
             'lr':       0.001,      # learning rate
-            'bsize':    64 if ndim == 2 else 3,  # batch size
+            'bsize':    32 if ndim == 2 else 1,  # batch size
             'scaler':   'norm',     # normalize or standardize
             'label':    'hard',     # hard or soft input
             'weight':   True,       # use class weights for unbalanced data
@@ -182,11 +184,11 @@ class Sweeper():
             'act':      'relu',     # activation
             'loss':     'dice',     # loss function
             'topact':   'softmax',  # top activation
-            'dropout':  0.3,        # dropout rate
+            'dropout':  0.0,        # dropout rate
             'backbone': 'base',     # base or unet
             'pretrn':   False,      # pretrained on imagenet
             'slftrn':   False,      # self train on unlabeled data
-            'dupe':     48          # number of data duplication to fit batch size
+            'dupe':     48 if ndim == 2 else 1  # number of data duplication to fit batch size
         }
     
     def sweep(self):
@@ -312,7 +314,7 @@ class Sweeper():
                                                       patience=10,
                                                       restore_best_weights=True,
                                                       verbose=1)
-        metrics_logger   = wandb.keras.WandbMetricsLogger()
+        metrics_logger = wandb.keras.WandbMetricsLogger()
         if self.wandb_artifact:
             checkpoint = wandb.keras.WandbModelCheckpoint(filepath=model_path,
                                                           monitor='val_dicecldice',
@@ -374,8 +376,7 @@ class Sweeper():
             print("##############")
             print("# SELF-TRAIN #")
             print("##############")
-            other_schedule = tf.keras.optimizers.schedules.CosineDecay(self.params['lr'], decay_steps=total_steps)
-            other_optim    = tf.keras.optimizers.Adam(learning_rate=schedule)
+            other_optim = tf.keras.optimizers.Adam(learning_rate=schedule)
             compile_n_fit(self.unlabel_gen,
                           self.valid_gen,
                           optimizer=other_optim,
@@ -405,6 +406,175 @@ class Sweeper():
         wandb.log(results)
 
 
+class RestoreSweeper():
+    def __init__(self, config):
+        """
+        Setup sweeps for wandb.
+        Parameters
+        ----------
+        config : dict
+            Sweeps configuration.
+            Refer to Wandb for format https://docs.wandb.ai/guides/sweeps/define-sweep-configuration
+        """
+        self.prj_config = get_config()
+        self.swp_config = config
+        self.params = {
+            'psf':       False,
+            'iteration': 50,
+            'nlm_size':  0,
+            'nlm_dist':  0,
+            'r':         50,
+            'amount':    10,
+            'btw_h':     1,
+            'btw_l':     1,
+            'btw_s':     0,
+            'md_ax0':    1,
+            'md_ax12':   3
+        }
+    
+    def sweep(self):
+        wandb.init()
+
+        print("###############")
+        print("# UPDATE ATTR #")
+        print("###############")
+        for param in self.swp_config['parameters'].keys():
+            if param in self.params:
+                print("-update {} from {} to {}".format(param, self.params[param], getattr(wandb.config, param, None)))
+                self.params[param] = getattr(wandb.config, param, self.params[param])
+
+        print("###############")
+        print("# SET LOADERS #")
+        print("###############")
+
+        inputs  = list(os.listdir(self.prj_config['VOLUME']['input']))
+        fullpath = lambda dir, files : [os.path.join(dir, name) for name in files]
+        xs = fullpath(self.prj_config['VOLUME']['input'],  inputs)
+        outputs = fullpath(self.prj_config['VOLUME']['restore'], inputs)
+        psf = tif.imread(os.path.join(self.prj_config['DIR']['psf'], "Averaged PSF.tif"))
+        
+        print("#############")
+        print("# RESTORING #")
+        print("#############")
+        pipeline = Threshold()
+        
+        for x, out in zip(xs, outputs):
+            y = pipeline.restore(tif.imread(x),
+                                 psf=psf if self.params['psf'] else None,
+                                 iteration=self.params['iteration'],
+                                 nlm_size=self.params['nlm_size'],
+                                 nlm_dist=self.params['nlm_dist'],
+                                 r=self.params['r'],
+                                 amount=self.params['amount'],
+                                 md_size=[self.params['md_ax0'], self.params['md_ax12'], self.params['md_ax12']],
+                                 butterworth=[self.params['btw_h'], self.params['btw_l'], self.params['btw_s']])
+            tif.imwrite(out, y, photometric='minisblack')
+
+        print("############")
+        print("# EVALUATE #")
+        print("############")
+        noise = np.zeros((len(outputs)))
+        
+        for i in range(noise.shape[0]):
+            noise[i] = estimate_sigma(tif.imread(outputs[i]))
+
+        #log_dict = self.params.copy()
+        #log_dict.update({"noise" : noise.mean()})
+        wandb.log({"noise" : noise.mean()})
+
+
+class ThresholdSweeper():
+    def __init__(self, config):
+        """
+        Setup sweeps for wandb.
+        Parameters
+        ----------
+        config : dict
+            Sweeps configuration.
+            Refer to Wandb for format https://docs.wandb.ai/guides/sweeps/define-sweep-configuration
+        """
+        self.prj_config = get_config()
+        self.swp_config = config
+        self.params = {
+            'psf':       False,
+            'iteration': 50,
+            'nlm_size':  0,
+            'nlm_dist':  0,
+            'r':         50,
+            'amount':    10,
+            'btw_h':     1,
+            'btw_l':     1,
+            'btw_s':     0,
+            'md_ax0':    1,
+            'md_ax12':   3,
+            'ro':        1,
+            'rc':        1
+        }
+    
+    def sweep(self):
+        wandb.init()
+
+        print("###############")
+        print("# UPDATE ATTR #")
+        print("###############")
+        for param in self.swp_config['parameters'].keys():
+            if param in self.params:
+                print("-update {} from {} to {}".format(param, self.params[param], getattr(wandb.config, param, None)))
+                self.params[param] = getattr(wandb.config, param, self.params[param])
+
+        print("###############")
+        print("# SET LOADERS #")
+        print("###############")
+
+        inputs  = list(os.listdir(self.prj_config['VOLUME']['input']))
+        fullpath = lambda dir, files : [os.path.join(dir, name) for name in files]
+        xs = fullpath(self.prj_config['VOLUME']['input'], inputs)
+        ys = fullpath(self.prj_config['VOLUME']['target'], inputs)
+        outputs = fullpath(self.prj_config['VOLUME']['threshold'], inputs)
+        psf = tif.imread(os.path.join(self.prj_config['DIR']['psf'], "Averaged PSF.tif"))
+        
+        print("###########")
+        print("# SEGMENT #")
+        print("###########")
+        pipeline = Threshold()
+        dice_fn = mtc.Dice().coefficient
+        dicecldice_fn = mtc.DiceClDice(iters=10, ndim=3, mode=2).coefficient
+        dice_scores = np.zeros((len(outputs)))
+        dicecldice_scores = np.zeros((len(outputs)))
+
+        for i in range(len(outputs)):
+            x = tif.imread(xs[i])
+            y = tif.imread(ys[i])
+            out = outputs[i]
+            d = pipeline.restore(x,
+                                 psf=psf if self.params['psf'] else None,
+                                 iteration=self.params['iteration'],
+                                 nlm_size=self.params['nlm_size'],
+                                 nlm_dist=self.params['nlm_dist'],
+                                 r=self.params['r'],
+                                 amount=self.params['amount'],
+                                 md_size=[self.params['md_ax0'], self.params['md_ax12'], self.params['md_ax12']],
+                                 butterworth=[self.params['btw_h'], self.params['btw_l'], self.params['btw_s']])
+            p = pipeline.segmentation(d,
+                                      ro=self.params['ro'],
+                                      rc=self.params['rc'])
+            
+            ty = tf.convert_to_tensor(np.expand_dims(y, 0), tf.float32)
+            tp = tf.convert_to_tensor(np.expand_dims(p, 0), tf.float32)
+            dice_scores[i] = dice_fn(ty, tp)
+            dicecldice_scores[i] = dicecldice_fn(ty, tp)
+            
+            tif.imwrite(out, p, photometric='rgb')
+
+        print("############")
+        print("# EVALUATE #")
+        print("############")
+        
+        #log_dict = self.params.copy()
+        #log_dict.update({"noise" : noise.mean()})
+        wandb.log({"dice" : dice_scores.mean(), "dicecldice" : dicecldice_scores.mean()})
+
+
 if __name__ == "__main__":
     print("CONFIGURATION:")
     cf = get_config()
@@ -423,3 +593,18 @@ if __name__ == "__main__":
     print(vld)
     print("TESTING")
     print(tst)
+
+    test_dict = {
+        'method': 'grid',
+        'name':   'sweep',
+        'project': 'test',
+        'metric': {
+            'goal': 'maximize',
+            'name': 'noise'
+        },
+        'parameters': {
+        }
+    }
+    sweeper = ThresholdSweeper(test_dict)
+    sweeper.sweep()
+    

@@ -292,18 +292,7 @@ def UNet(shape, n_class=3, depth=4, n_feat=64, dropout=0.3, norm_order=0,
     output = layers.Activation(top_activation)(current_layer)
     
     if top_activation == 'relu':
-        # Based on SoftSeg normalisation of ReLU output
-        # https://ivadomed.org/_modules/ivadomed/models.html#Unet
-        # Important since ReLU output range goes to infinity n beyond
-        normalize = output / tf.reduce_max(output)
-        
-        # handle division by 0
-        output = tf.where(tf.math.is_nan(normalize), tf.zeros_like(normalize), normalize)
-
-        if n_class > 0:
-            all_sums = tf.expand_dims(tf.reduce_sum(output, axis=-1), axis=-1)
-            all_sums = tf.where(all_sums == 0, tf.ones_like(all_sums), all_sums)
-            output = output / all_sums
+        output = carreno.nn.layers.ReluNormalization(n_class)(output)
 
     model = tf.keras.Model(input, output)
 

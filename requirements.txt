@@ -3,6 +3,7 @@ numpy
 scipy
 scikit-image
 tifffile
+imageio
 gdown
 patool
 pyunpack

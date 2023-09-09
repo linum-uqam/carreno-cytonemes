@@ -232,6 +232,36 @@ def model2D_to_3D(model, inp_ndim=64):
     return nmodel
 
 
+class ReluNormalization(tf.keras.layers.Layer):
+    def __init__(self, n_class):
+        super(ReluNormalization, self).__init__()
+        self.n_class = n_class
+
+    def build(self, input_shape=None):
+        pass
+
+    def call(self, inputs):
+        # Based on SoftSeg normalisation of ReLU output
+        # https://ivadomed.org/_modules/ivadomed/models.html#Unet
+        # Important since ReLU output range goes to infinity n beyond
+        normalize = inputs / tf.reduce_max(inputs)
+        
+        # handle division by 0
+        outputs = tf.where(tf.math.is_nan(normalize), tf.zeros_like(normalize), normalize)
+
+        if self.n_class > 0:
+            all_sums = tf.expand_dims(tf.reduce_sum(outputs, axis=-1), axis=-1)
+            all_sums = tf.where(all_sums == 0, tf.ones_like(all_sums), all_sums)
+            outputs = outputs / all_sums
+        
+        return outputs
+
+    def get_config(self):
+        config = super(ReluNormalization, self).get_config()
+        config.update({"n_class": self.n_class})
+        return config
+        
+
 class NormalizeRange(tf.keras.layers.Layer):
     def __init__(self, vmin=0, vmax=1, axis=-1):
         """

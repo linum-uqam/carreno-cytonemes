@@ -1,13 +1,13 @@
 # Parent directories for data
 DIR:
-  raw:         data/raw                    # where uncompressed data is or should be downloaded
-  psf:         data/psf                    # where psf for deconvolutions are
-  dataset:     data/dataset                # where data is
-  drawing:     data/drawn_cyto             # Basile 2D drawing of cytonemes for pipeline validation
-  output:      data/output                 # where script outputs should be
-  model:       data/output/model           # where we save our models
-  graph:       data/output/graph           # where we save our graphes
-  figure:      data/output/figure          # where we save our figures
+  raw:         data/raw            # where uncompressed data is or should be downloaded
+  psf:         data/psf            # where psf for deconvolutions are
+  dataset:     data/dataset        # where data is
+  drawing:     data/drawn_cyto     # Basile 2D drawing of cytonemes for pipeline validation
+  output:      data/output         # where script outputs should be
+  model:       data/output/model   # where we save our models
+  graph:       data/output/graph   # where we save our graphes
+  figure:      data/output/figure  # where we save our figures
 
 # volumes
 VOLUME:
@@ -16,20 +16,28 @@ VOLUME:
   soft_target: data/dataset/soft_target    # where soft labeled Y inputs are
   weight:      data/dataset/weight         # where inputs sample weights are
   soft_weight: data/dataset/soft_weight    # where inputs soft sample weights are
-  unlabeled:   data/dataset/unlabeled      # where unlabeled inputs are
+  unlabeled:             data/dataset/unlabeled      # where unlabeled inputs are
+  unlabeled_target:      data/dataset/unlabeled_target       # where unlabeled self generated targets are
+  unlabeled_soft_target: data/dataset/unlabeled_soft_target  # where unlabeled self generated targets are
+  unlabeled_weight:      data/dataset/unlabeled_weight       # where unlabeled self generated targets are
+  unlabeled_soft_weight: data/dataset/unlabeled_soft_weight  # where unlabeled self generated targets are
+  restore:     data/output/restore         # where we save the denoised volumes
+  threshold:   data/output/threshold       # where we save the segmented volumes via threshold
+  unet2d:      data/output/unet2d          # where we save the segmented volumes via UNet2D
+  unet3d:      data/output/unet3d          # where we save the segmented volumes via UNet3D
 
 # For patch generation
 PREPROCESS:
-  n_cls: 3    # number of classes
-  patch:      # patch shape
-    - 48      # z axis
-    - 96      # y axis
-    - 96      # x axis
-  stride:     # stride/step for each axis
-    - 48      # z axis
-    - 48      # y axis
-    - 48      # x axis
-  blur: 1.5   # sigma for gaussian blur when generating soft labels
+  n_cls: 3   # number of classes
+  patch:     # patch shape
+    - 48     # z axis
+    - 96     # y axis
+    - 96     # x axis
+  stride:    # stride/step for each axis
+    - 48     # z axis
+    - 48     # y axis
+    - 48     # x axis
+  blur: 1.5  # sigma for gaussian blur when generating soft labels
 
 MODEL:
   backbone:   VGG16        # UNet backbone
@@ -39,8 +47,8 @@ MODEL:
 TRAINING:
   epoch:      100          # number of epoch
   patience:   10           # early stop patience
-  batch2D:    64           # batch size for 2D
-  batch3D:    3            # batch size for 3D
+  batch2D:    4            # batch size for 2D
+  batch3D:    4            # batch size for 3D
   validation:              # volumes used for validation
     - ctrl3
     - slik5

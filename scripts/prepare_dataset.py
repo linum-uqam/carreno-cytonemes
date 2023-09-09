@@ -223,8 +223,8 @@ def create_dataset_target_folder(folder, volumes, cytonemes, bodies, blur=None):
             dist_ratio = 0.26 / 0.1201058
             y = scipy.ndimage.gaussian_filter(y, sigma=(blur/(dist_ratio), blur, blur, 0))
             
-            # make sure everything is well distributed
-            scipy.special.softmax(y, axis=-1)
+            # make sure everything is well distributed (last axis sum == 1)
+            y = (1 / y.sum(axis=-1))[..., np.newaxis] * y
 
         tif.imwrite(folder + '/' + volumes[i][1] + '.tif', y, photometric='rgb')
 

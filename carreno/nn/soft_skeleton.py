@@ -240,13 +240,16 @@ if __name__ == '__main__':
     from skimage.filters import gaussian
 
     cube = np.zeros((20, 20, 20, 3))
-    cube[4:-4, 4:, 4:-4] = [0, 1, 0]
-    cube[:4]        = [1, 0, 0]
-    cube[-4:]       = [1, 0, 0]
-    cube[:, :4]     = [1, 0, 0]
-    cube[:, :, :4]  = [1, 0, 0]
-    cube[:, :, -4:] = [1, 0, 0]
-    cube = gaussian(cube, sigma=1.05, multichannel=True)
+    cube[5:-5, 5:, 5:-5] = [0, 1, 0]
+    cube[:5]        = [1, 0, 0]
+    cube[-5:]       = [1, 0, 0]
+    cube[:, :5]     = [1, 0, 0]
+    cube[:, :, :5]  = [1, 0, 0]
+    cube[:, :, -5:] = [1, 0, 0]
+    cube_w_constant_pad = np.zeros((30, 25, 30, 3))
+    slc = tuple([slice(5,-5), slice(5,None), slice(5,-5)])
+    cube_w_constant_pad[slc] = cube
+    cube = gaussian(cube_w_constant_pad, sigma=1.05, multichannel=True)[slc]
     cube_tensor = tf.expand_dims(tf.convert_to_tensor(cube, dtype=tf.float32), 0)
 
     n = cube.shape[0] // 2
@@ -286,6 +289,13 @@ if __name__ == '__main__':
             plt.imshow(skel.numpy()[0,n])
             
             plt.show()
+
+            """# save skeleton
+            plt.imshow(skel.numpy()[0,n])
+            plt.axis('off')
+            plt.tight_layout()
+            plt.savefig("skel_iter{}_constant.png".format(j), transparent=True)
+            """
 
     __plt_skel(cube_tensor, 7, n, mode=2)
     

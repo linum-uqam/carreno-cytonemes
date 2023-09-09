@@ -81,9 +81,9 @@ sweep_configs = {
         }
     },
     5 : {
-        'method': 'grid',
+        'method': 'bayes',
         'name':   'sweep',
-        'project': 'unet2d_dropout',
+        'project': 'unet2d_dropout2',
         'metric': {
             'goal': 'maximize',
             'name': 'val_dicecldice'
@@ -97,7 +97,7 @@ sweep_configs = {
             'act':     {'value': 'relu'},
             'topact':  {'value': 'relu'},
             'loss':    {'value': 'cldiceadawing'},
-            'dropout': {'values': [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]}
+            'dropout': {'min': 0.0, 'max': 0.5}
         }    
     },
     6 : {
@@ -173,10 +173,10 @@ sweep_configs = {
 
 
 def main():
-    current_test = 0
+    current_test = 5
     sweep_config = sweep_configs[current_test]
     sweep_id = wandb.sweep(sweep_config)
-    sweeper = utils.Sweeper(sweep_config)
+    sweeper = utils.UNetSweeper(sweep_config,wandb_artifact=False)
     wandb.agent(sweep_id, function=sweeper.sweep)
     
 
