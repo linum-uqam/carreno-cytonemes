@@ -2,7 +2,8 @@
 import numpy as np
 
 def normalize(x, minv=0, maxv=1):
-    """Normalize array between given range
+    """
+    Normalize array between given range
     Parameters
     ----------
     x : list, ndarray
@@ -20,6 +21,23 @@ def normalize(x, minv=0, maxv=1):
     y = y + (0 - y.min())
     y = y / y.max()
     return y * (maxv - minv) + minv
+
+
+def standardize(x):
+    """
+    Standardize array
+    Parameters
+    ----------
+    x : list ndarray
+    Returns
+    -------
+    y : ndarray
+        standardize x with dtype float32
+    """
+    mean = x.mean()
+    std = x.std()
+    y = x - mean / std
+    return y
 
 
 def euclidean_dist(coord1, coord2=0, dist=None):
@@ -99,19 +117,26 @@ def ndim_for_pixel(shape):
     nch = nb_color_channel(shape)
     return len(shape) - min([nch, 1])  # either minus 0 or 1
 
-# TODO generate a gaussian distribution?
-#def gaussian_filter(sigma=1.0, mu=0.0):
-#    # https://stackoverflow.com/questions/14873203/plotting-of-1-dimensional-gaussian-distribution-function
-#
-#    from matplotlib import pyplot as mp
-#    import numpy as np
-#
-#    def gaussian(x, mu, sig):
-#        return np.exp(-np.power(x - mu, 2.) / (2 * np.power(sig, 2.)))
-#
-#    x_values = np.linspace(-3, 3, 120)
-#    for mu, sig in [(-1, 1), (0, 2), (2, 3)]:
-#        mp.plot(x_values, gaussian(x_values, mu, sig))
-#
-#    mp.show()
-#    return ...
+
+def butterworth(n, low, high, shift=0):
+    """
+    Butterworth distribution in 1D
+    Parameters
+    ----------
+    n : int
+        length of the distribution
+    low : float
+        low values boundaries
+    high : float
+        high values boundaries
+    shift : int
+        shift distribution right (+) or left (-)
+    Returns
+    -------
+    n : ndarray
+        distribution values in a list
+    """
+    u = np.linspace(0-shift, n-shift, n)
+    D = np.sqrt((u-n/2)**2)
+    h = 1 / (1 + (D/low)**(2*high))
+    return h

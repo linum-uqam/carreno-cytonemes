@@ -2,14 +2,13 @@
 import tensorflow as tf
 import os
 from pathlib import Path
-import numpy as np
-from sklearn.metrics import confusion_matrix
-from carreno.processing.classify import categorical_multiclass, categorical_to_sparse
+from wandb.keras import WandbMetricsLogger, WandbModelCheckpoint, WandbEvalCallback
 
 def early_stop(metric, mode='min', patience=5, verbose=1):
     callback = tf.keras.callbacks.EarlyStopping(monitor=metric,
                                                 mode=mode,
                                                 patience=patience,
+                                                restore_best_weights=True,
                                                 verbose=verbose)
 
     return callback

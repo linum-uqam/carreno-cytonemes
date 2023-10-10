@@ -4,50 +4,47 @@ import os
 import albumentations as A
 import volumentations as V
 import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
+from pathlib import Path
+import wandb
 
 # local imports
 import utils
-import carreno.nn.callbacks as cb
 import carreno.nn.metrics as mtc
-from carreno.nn.unet import encoder_trainable
+from carreno.nn.unet import encoder_trainable, switch_top
 from carreno.nn.generators import get_volumes_slices, volume_generator, volume_slice_generator
 
 # adjustable settings
-train_encoder  = False
-LR             = 0.00001
-loss           = mtc.dice_loss  # tf.keras.losses.MeanSquaredError() # TODO would probably get much better results with GAN loss
-inp_model_name = "untrn_unet2D-4-64-0.3-relu-VGG16.h5"
-out_model_name = "slfspv_{}-{}.h5".format(LR, inp_model_name.rsplit('.', 1)[0])
-
+inp_model_name = "tfr3D_slfspv_1e-05-untrn_unet2D-4-64-0.3-relu-VGG16.h5"
+wdb_project    = 'unet2d'
 
 def main(verbose=0):
     config = utils.get_config()
 
     # load model
-    path_to_unet = os.path.join(config['TRAINING']['output'], inp_model_name)
+    path_to_unet = os.path.join(config['DIR']['model'], inp_model_name)
     model = tf.keras.models.load_model(path_to_unet, compile=False)
     
+    # setup wandb
+    wandb.init(project=wdb_project, config=config)
+
+    # switch top layer
+    activation = config['MODEL']['top_act']
+    model = switch_top(model, activation=activation)
+
     # find if model is 2D or 3D
     is_2D = len(model.layers[0].input.shape) == 4  # 5 if 3D
     print("Model is {}D".format(2 if is_2D else 3)) if verbose else ...
 
     # split dataset
-    vtype = 'unlabeled'
+    vtype = config['TRAINING']['input']
+    pouts = [config['TRAINING']['input'],
+             config['TRAINING']['target'],
+             config['TRAINING']['weight']]
     dataset = utils.split_dataset(vtype,
-                                  [vtype],
-                                  valid=0.2 * 2,  # doubled from 0.2 to 0.4 because there's no ctrl
-                                  test =0.2 * 2,  # meaning we only take half (see implementation in utils)
+                                  pouts,
+                                  valid=0.2,
+                                  test=0.2,
                                   shuffle=True)
-    
-    x_train, x_valid, y_train, y_valid = train_test_split(x_data,
-                                                          y_data,
-                                                          test_size=0.4,
-                                                          random_state=6)
-    x_valid, x_test, y_valid, y_test   = train_test_split(x_valid,
-                                                          y_valid,
-                                                          test_size=0.4,
-                                                          random_state=9)
     
     if verbose:
         for i, txt in zip(list(range(len(dataset))), ['training', 'validation', 'testing']):
@@ -59,7 +56,7 @@ def main(verbose=0):
         # slice up volumes over axis 0
         slice_dataset = []
         for set in dataset:
-            slice_dataset.append(get_volumes_slices(set[vtype]))
+            slice_dataset.append([get_volumes_slices(set[po]) for po in pouts])
         
         if verbose:
             for i, txt in zip(list(range(len(slice_dataset))), ['training', 'validation', 'testing']):
@@ -75,9 +72,9 @@ def main(verbose=0):
 
         gens = []
         for i in range(len(slice_dataset)):
-            gen = volume_slice_generator(vol=slice_dataset[i],
-                                         label=slice_dataset[i],
-                                         weight=slice_dataset[i] if i < 2 else None,  # no weights for tests
+            gen = volume_slice_generator(vol=slice_dataset[i][0],
+                                         label=slice_dataset[i][1],
+                                         weight=slice_dataset[i][2] if i < 2 else None,  # no weights for tests
                                          size=config['TRAINING']['batch2D'],
                                          augmentation=aug,
                                          noise=noise,
@@ -90,16 +87,16 @@ def main(verbose=0):
         # augmentation
         aug = None  # we already have plenty of patches
         noise = V.Compose([
-            V.GridDropout(0.5, unit_size_min=5, unit_size_max=15,
+            V.GridDropout(0.5, unit_size_min=5, unit_size_max=10,
                           holes_number_x=5, holes_number_y=5, holes_number_z=2,
                           random_offset=True, p=1)
         ])
 
         gens = []
         for i in range(len(dataset)):
-            gen = volume_generator(vol=dataset[i][vtype],
-                                   label=dataset[i][vtype],
-                                   weight=dataset[i][vtype] if i < 2 else None,  # no weights for tests
+            gen = volume_generator(vol=dataset[i][pouts[0]],
+                                   label=dataset[i][pouts[1]],
+                                   weight=dataset[i][pouts[2]] if i < 2 else None,  # no weights for tests
                                    size=config['TRAINING']['batch3D'],
                                    augmentation=aug,
                                    noise=noise,
@@ -131,26 +128,56 @@ def main(verbose=0):
             for j, k in zip(range(1, nb_columns+1), ['x', 'y', 'w']):
                 plt.subplot(nb_lines, nb_columns, i*nb_columns+j)
                 plt.title(k + " " + str(i), fontsize=12)
-                plt.imshow(batch0[j-1][i], vmin=batch0[j-1].min(), vmax=batch0[j-1].max())
+                if is_2D:
+                    plt.imshow(batch0[j-1][i], vmin=batch0[j-1].min(), vmax=batch0[j-1].max())
+                else:
+                    hslc = batch0[j-1][i].shape[0] // 2
+                    plt.imshow(batch0[j-1][i][hslc], vmin=batch0[j-1].min(), vmax=batch0[j-1].max())
         
         plt.tight_layout()
         plt.show()
 
     # freeze encoder if needed
-    encoder_trainable(model, train_encoder)
+    encoder_trainable(model, config['TRAIN']['enc_frz'])
+
+    # set metrics and loss
+    metrics = [mtc.dice_score(smooth=1.)]
+    if config['TRAINING']['loss'] == 'dice':
+        loss = mtc.dice_loss
+    elif config['TRAINING']['loss'] == 'bce_dice':
+        loss = mtc.bce_dice_loss
+    elif config['TRAINING']['loss'] == 'adap_wing':
+        loss = mtc.adap_wing_loss(theta=0.5, alpha=2.1, omega=8, epsilon=1)
+    else:
+        loss = tf.keras.losses.MeanSquaredError()
 
     # set callbacks
-    metrics = [mtc.dice_score(smooth=1.)]
+    monitor, mode = 'val_dice', 'max'
+    early_stop = tf.keras.callbacks.EarlyStopping(monitor=monitor,
+                                                  mode=mode,
+                                                  patience=config['TRAINING']['patience'],
+                                                  restore_best_weights=True,
+                                                  verbose=1)
     
-    early_stop = cb.early_stop(metric='val_dice',
-                               mode='max',
-                               patience=config['TRAINING']['patience'])
+    LR = config['TRAINING']['init_lr']
+    out_model_name = "spv_{}.h5".format(inp_model_name.rsplit('.', 1)[0])
+    out_model_path = os.path.join(config['DIR']['model'], out_model_name)
+    folder = os.path.dirname(out_model_path)
+    Path(folder).mkdir(parents=True, exist_ok=True)
+    model_checkpoint = tf.keras.callbacks.ModelCheckpoint(filepath=out_model_path,
+                                                          monitor=monitor,
+                                                          mode=mode,
+                                                          save_best_only=True,
+                                                          verbose=1)
+    # model_name = "{epoch:02d}-{val_accuracy:.2f}"
+    wandb_checkpoint = wandb.keras.WandbModelCheckpoint(filepath=out_model_name,
+                                                        monitor=monitor,
+                                                        mode=mode,
+                                                        verbose=0,
+                                                        save_best_only=True,
+                                                        save_weights_only=False)
+    metrics_logger   = wandb.keras.WandbMetricsLogger()
     
-    out_model_path = os.path.join(config['TRAINING']['output'], out_model_name)
-    model_checkpoint = cb.model_checkpoint(out_model_path,
-                                           metric='val_dice',
-                                           mode='max')
-
     total_steps = len(train_gen) * config['TRAINING']['epoch']
     schedule = tf.keras.optimizers.schedules.CosineDecay(LR, decay_steps=total_steps)
     optim = tf.keras.optimizers.Adam(learning_rate=schedule)
@@ -169,7 +196,9 @@ def main(verbose=0):
                         verbose=1,
                         callbacks=[
                             model_checkpoint,
-                            early_stop
+                            wandb_checkpoint,
+                            early_stop,
+                            metrics_logger
                         ])
 
     # metrics display (acc, loss, etc.)

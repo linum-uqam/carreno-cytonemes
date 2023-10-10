@@ -4,23 +4,21 @@ import os
 import albumentations as A
 import volumentations as V
 import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
 
 # local imports
 import utils
 import carreno.nn.callbacks as cb
 import carreno.nn.metrics as mtc
-from carreno.nn.unet import encoder_trainable, switch_top
+from carreno.nn.unet import encoder_trainable
 from carreno.nn.generators import get_volumes_slices, volume_generator, volume_slice_generator
 
 # adjustable settings
-train_encoder  = True
-LR             = 0.001
-loss           = mtc.bce_dice_loss
-#loss           = mtc.adap_wing_loss(theta=0.5, alpha=2.1, omega=8, epsilon=1)
-#loss           = tf.keras.losses.MeanSquaredError() # TODO would probably get much better results with GAN loss
-activation     = 'softmax'
-inp_model_name = "tfr3D_slfspv_1e-05-untrn_unet2D-4-64-0.3-relu-VGG16.h5"
-out_model_name = "spv_{}-{}.h5".format(LR, inp_model_name.rsplit('.', 1)[0])
+train_encoder  = False
+LR             = 0.00001
+loss           = mtc.dice_loss  # tf.keras.losses.MeanSquaredError() # TODO would probably get much better results with GAN loss
+inp_model_name = "untrn_unet2D-4-64-0.3-relu-VGG16.h5"
+out_model_name = "slfspv_{}-{}.h5".format(LR, inp_model_name.rsplit('.', 1)[0])
 
 
 def main(verbose=0):
@@ -30,21 +28,26 @@ def main(verbose=0):
     path_to_unet = os.path.join(config['TRAINING']['output'], inp_model_name)
     model = tf.keras.models.load_model(path_to_unet, compile=False)
     
-    # switch top layer
-    model = switch_top(model, activation=activation)
-
     # find if model is 2D or 3D
     is_2D = len(model.layers[0].input.shape) == 4  # 5 if 3D
     print("Model is {}D".format(2 if is_2D else 3)) if verbose else ...
 
     # split dataset
-    vtype = 'input'
-    pouts = ['input', 'soft_target', 'soft_weight']
+    vtype = 'unlabeled'
     dataset = utils.split_dataset(vtype,
-                                  pouts,
-                                  valid=0.2,
-                                  test=0.2,
+                                  [vtype],
+                                  valid=0.2 * 2,  # doubled from 0.2 to 0.4 because there's no ctrl
+                                  test =0.2 * 2,  # meaning we only take half (see implementation in utils)
                                   shuffle=True)
+    
+    x_train, x_valid, y_train, y_valid = train_test_split(x_data,
+                                                          y_data,
+                                                          test_size=0.4,
+                                                          random_state=6)
+    x_valid, x_test, y_valid, y_test   = train_test_split(x_valid,
+                                                          y_valid,
+                                                          test_size=0.5,
+                                                          random_state=9)
     
     if verbose:
         for i, txt in zip(list(range(len(dataset))), ['training', 'validation', 'testing']):
@@ -56,7 +59,7 @@ def main(verbose=0):
         # slice up volumes over axis 0
         slice_dataset = []
         for set in dataset:
-            slice_dataset.append([get_volumes_slices(set[po]) for po in pouts])
+            slice_dataset.append(get_volumes_slices(set[vtype]))
         
         if verbose:
             for i, txt in zip(list(range(len(slice_dataset))), ['training', 'validation', 'testing']):
@@ -72,9 +75,9 @@ def main(verbose=0):
 
         gens = []
         for i in range(len(slice_dataset)):
-            gen = volume_slice_generator(vol=slice_dataset[i][0],
-                                         label=slice_dataset[i][1],
-                                         weight=slice_dataset[i][2] if i < 2 else None,  # no weights for tests
+            gen = volume_slice_generator(vol=slice_dataset[i],
+                                         label=slice_dataset[i],
+                                         weight=slice_dataset[i] if i < 2 else None,  # no weights for tests
                                          size=config['TRAINING']['batch2D'],
                                          augmentation=aug,
                                          noise=noise,
@@ -87,16 +90,16 @@ def main(verbose=0):
         # augmentation
         aug = None  # we already have plenty of patches
         noise = V.Compose([
-            V.GridDropout(0.5, unit_size_min=5, unit_size_max=10,
+            V.GridDropout(0.5, unit_size_min=5, unit_size_max=15,
                           holes_number_x=5, holes_number_y=5, holes_number_z=2,
                           random_offset=True, p=1)
         ])
 
         gens = []
         for i in range(len(dataset)):
-            gen = volume_generator(vol=dataset[i][pouts[0]],
-                                   label=dataset[i][pouts[1]],
-                                   weight=dataset[i][pouts[2]] if i < 2 else None,  # no weights for tests
+            gen = volume_generator(vol=dataset[i][vtype],
+                                   label=dataset[i][vtype],
+                                   weight=dataset[i][vtype] if i < 2 else None,  # no weights for tests
                                    size=config['TRAINING']['batch3D'],
                                    augmentation=aug,
                                    noise=noise,
@@ -128,11 +131,7 @@ def main(verbose=0):
             for j, k in zip(range(1, nb_columns+1), ['x', 'y', 'w']):
                 plt.subplot(nb_lines, nb_columns, i*nb_columns+j)
                 plt.title(k + " " + str(i), fontsize=12)
-                if is_2D:
-                    plt.imshow(batch0[j-1][i], vmin=batch0[j-1].min(), vmax=batch0[j-1].max())
-                else:
-                    hslc = batch0[j-1][i].shape[0] // 2
-                    plt.imshow(batch0[j-1][i][hslc], vmin=batch0[j-1].min(), vmax=batch0[j-1].max())
+                plt.imshow(batch0[j-1][i], vmin=batch0[j-1].min(), vmax=batch0[j-1].max())
         
         plt.tight_layout()
         plt.show()

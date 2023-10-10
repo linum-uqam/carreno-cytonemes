@@ -12,7 +12,7 @@ pip install -e .
 ## Dependencies
 With `pip` (download cuda on nvidia website for GPU usage):
 ```
-pip install -i requirements.txt
+pip install -r requirements.txt
 ```
 
 With `anaconda` :

@@ -3,6 +3,7 @@ numpy
 scipy
 scikit-image
 tifffile
+imageio
 gdown
 patool
 pyunpack
@@ -10,10 +11,10 @@ scikit-image
 scikit-learn
 bm3d
 matplotlib
-tensorflow==2.7.0
+tensorflow==2.9.0
 cuda-python
 patchify
-albumentations
-volumentations-3D
 pyyaml
 plantuml
+wandb
+streamlit

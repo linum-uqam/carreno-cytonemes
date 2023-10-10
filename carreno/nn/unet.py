@@ -47,7 +47,8 @@ def switch_top(model, activation='softmax'):
     return tf.keras.Model(inp.input, out)
 
 
-def UNet(shape, n_class=3, depth=3, n_feat=32, dropout=0.3, activation='softmax', backbone=None, pretrained=True):
+def UNet(shape, n_class=3, depth=4, n_feat=64, dropout=0.3, norm_order=0,
+         activation='relu', top_activation='softmax', backbone=None, pretrained=True):
     """
     Create a UNet architecture
     Parameters
@@ -62,7 +63,13 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, dropout=0.3, activation='softmax'
         Number of features for the first encoder block (will increase and decrease according to UNet architecture)
     dropout : float
         Dropout ratio after convolution activation
+    norm_order : int
+        Determines location of batch normalization
+        - 0 : batch normalization before activation like in paper
+        - 1 : batch normalization after activation like today standards
     activation : str or keras activation function
+        Activation function after convolutions
+    top_activation : str or keras activation function
         last convolution layer activation
     backbone : None, str
         UNet backbone, only support "vgg16" atm
@@ -74,7 +81,6 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, dropout=0.3, activation='softmax'
         Keras model waiting to be compiled for training
     """
     supported_backbone = ["vgg16"]
-    depth = depth
     ndim = len(shape) - 1
     kernel_size_conv =     [3] * ndim
     kernel_size_sampling = [2] * ndim
@@ -82,9 +88,46 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, dropout=0.3, activation='softmax'
     layers = carreno.nn.layers.layers(ndim)
     backbone_model = None
 
+    def one_conv(input, n_feat=32, size=kernel_size_conv, dropout=0.3, activation='relu'):
+        """
+        1 convolution layers to add with batch normalisation
+        Parameters
+        ----------
+        input : tf.keras.engine.keras_tensor.KerasTensor
+            input layer to pick up from
+        n_feat : int
+            number of features for convolutions
+        size : int or list
+            conv kernel shape
+        dropout : float
+            dropout rate
+        activation : str
+            activation type
+        Returns
+        -------
+        output : tf.keras.engine.keras_tensor.KerasTensor
+            last keras layer output
+        """
+        # https://stackoverflow.com/questions/39691902/ordering-of-batch-normalization-and-dropout
+        # See figs_and_nuts answer for layer order
+        conv = layers.ConvXD(n_feat,
+                             size,
+                             padding="same")(input)
+        if norm_order:
+            # put batch norm after activation
+            acti   = layers.Activation(activation)(conv)
+            drop   = layers.Dropout(dropout)(acti)
+            output = layers.BatchNormalization()(drop)
+        else:
+            # put batch norm before activation
+            norm   = layers.BatchNormalization()(conv)
+            acti   = layers.Activation(activation)(norm)
+            output = layers.Dropout(dropout)(acti)
+        return output
+
     def two_conv(input, n_feat=32):
         """
-        2 convolution layers to add with batch normalisation
+        2 convolutions layers to add with batch normalisation
         Parameters
         ----------
         input : tf.keras.engine.keras_tensor.KerasTensor
@@ -93,24 +136,17 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, dropout=0.3, activation='softmax'
             number of features for convolutions
         Returns
         -------
-        __ " tf.keras.engine.keras_tensor.KerasTensor
+        current_layer : tf.keras.engine.keras_tensor.KerasTensor
             last keras layer output
         """
-        conv1 = layers.ConvXD(n_feat,
-                              kernel_size_conv,
-                              padding="same")(input)
-        acti1 = layers.LeakyReLU()(conv1)
-        norm1 = layers.BatchNormalization()(acti1)
-        drop1 = layers.Dropout(dropout)(norm1)
-        
-        conv2 = layers.ConvXD(n_feat,
-                              kernel_size_conv,
-                              padding="same")(drop1)
-        acti2 = layers.LeakyReLU()(conv2)
-        norm2 = layers.BatchNormalization()(acti2)
-        drop2 = layers.Dropout(dropout)(norm2)
-        
-        return drop2
+        current_layer = input
+        for i in range(2):
+            current_layer = one_conv(current_layer,
+                                     n_feat=n_feat,
+                                     size=kernel_size_conv,
+                                     dropout=dropout,
+                                     activation=activation)
+        return current_layer
 
     def encoder_block(input, n_feat=32):
         """
@@ -130,7 +166,6 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, dropout=0.3, activation='softmax'
         """
         skip = two_conv(input, n_feat)
         down_sample = layers.MaxPoolingXD(kernel_size_sampling)(skip)
-        
         return skip, down_sample
 
     def decoder_block(input, skip, n_feat=32):
@@ -249,10 +284,15 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, dropout=0.3, activation='softmax'
     else:
         raise Exception("Error : {} is not supported!".format(backbone)) 
     
-    output = layers.ConvXD(filters=n_class,
+    
+    current_layer = layers.ConvXD(filters=n_class,
                            kernel_size=1,
-                           padding="same",
-                           activation=activation)(current_layer)
+                           padding="same")(current_layer)
+    
+    output = layers.Activation(top_activation)(current_layer)
+    
+    if top_activation == 'relu':
+        output = carreno.nn.layers.ReluNormalization(n_class)(output)
 
     model = tf.keras.Model(input, output)
 
@@ -264,3 +304,104 @@ def UNet(shape, n_class=3, depth=3, n_feat=32, dropout=0.3, activation='softmax'
             model.layers[1].set_weights([nw, b])
 
     return model
+
+
+if __name__ == '__main__':
+    import unittest
+
+    class TestUnet(unittest.TestCase):
+        def train_n_pred(self, shape, n_class, depth, n_feat, backbone, top_activation='softmax'):
+            # generate data
+            n = np.prod(np.array(shape[:-1]))
+            x = np.arange(n).reshape(shape[:-1])
+            classes = x % n_class
+            c = [classes == i for i in range(n_class)]
+            x = np.stack([x]*shape[-1], axis=-1) / (n-1)  # normalize with division
+            y = np.stack([c[0], c[1]], axis=-1) if n_class == 2 else np.stack(c, axis=-1)
+
+            # create architecture
+            try:                
+                model = UNet(shape=shape,
+                             n_class=n_class,
+                             depth=depth,
+                             n_feat=n_feat,
+                             backbone=backbone,
+                             pretrained=False,
+                             top_activation=top_activation)
+            except Exception as e:
+                self.fail("Failed creating architecture : {}".format(e))
+            
+            # compile model
+            try:
+                model.compile(optimizer=tf.keras.optimizers.Adam(0.001),
+                              loss=tf.keras.losses.MeanSquaredError())
+            except Exception as e:
+                self.fail("Model compilation failed : {}".format(e))
+            
+            # train model
+            xs = x[np.newaxis, :]  # otherwise x is iterated over axis 0 in batch
+            ys = y[np.newaxis, :]  # ^ same for y
+            try:
+                history = model.fit(x=xs,
+                                    y=ys,
+                                    batch_size=1,
+                                    epochs=3,
+                                    verbose=0)
+            except Exception as e:
+                self.fail("Training failed : {}".format(e))
+            
+            # model prediction
+            try:
+                pred = model.predict(tf.convert_to_tensor(np.stack([x]*3)), verbose=0)
+                self.assertGreaterEqual(np.round(tf.reduce_min(pred).numpy(), 5), 0)
+                self.assertLessEqual(   np.round(tf.reduce_max(pred).numpy(), 5), 1)
+                #self.assertEqual(       np.round(tf.reduce_sum(pred[0]).numpy(), 5), np.prod(ys.shape))
+                self.assertEqual(       np.round(tf.reduce_sum(pred, axis=-1).numpy()[tuple([0]*(ys.ndim-1))], 5), 1)
+            except Exception as e:
+                self.fail("Prediction failed : {}".format(e))
+            
+            return model
+
+        def test_2D(self):
+            # Color channels
+            self.train_n_pred(shape=[32,32,1], n_class=3, depth=2, n_feat=8, backbone=None)
+            self.train_n_pred(shape=[32,32,3], n_class=3, depth=2, n_feat=8, backbone=None)
+            
+            # Backbone
+            self.train_n_pred(shape=[32,32,1], n_class=3, depth=4, n_feat=64, backbone="vgg16")
+            self.train_n_pred(shape=[32,32,3], n_class=3, depth=4, n_feat=64, backbone="vgg16")
+            
+        def test_3D(self):
+            # Color channels
+            self.train_n_pred(shape=[32,32,32,1], n_class=3, depth=2, n_feat=8, backbone=None)
+            self.train_n_pred(shape=[32,32,32,3], n_class=3, depth=2, n_feat=8, backbone=None)
+            
+            # Backbone
+            self.train_n_pred(shape=[32,32,32,1], n_class=3, depth=4, n_feat=64, backbone="vgg16")
+            self.train_n_pred(shape=[32,32,32,3], n_class=3, depth=4, n_feat=64, backbone="vgg16")
+        
+        def test_encoder_freeze(self):
+            model = self.train_n_pred(shape=[32,32,32,1], n_class=3, depth=2, n_feat=8, backbone=None)
+            n_trainable = 0
+            for layer in model.layers:
+                if layer.trainable:
+                    n_trainable += 1
+            
+            encoder_trainable(model, False)
+            n_trainable_after = 0
+            for layer in model.layers:
+                if layer.trainable:
+                    n_trainable_after += 1
+            self.assertLess(n_trainable_after, n_trainable)
+
+            encoder_trainable(model, True)
+            n_trainable_after = 0
+            for layer in model.layers:
+                if layer.trainable:
+                    n_trainable_after += 1
+            self.assertEqual(n_trainable_after, n_trainable)
+        
+        def test_relu_output(self):
+            self.train_n_pred(shape=[32,32,1], n_class=3, depth=2, n_feat=8, backbone=None, top_activation='relu')
+    
+    unittest.main()

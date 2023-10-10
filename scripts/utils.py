@@ -4,6 +4,10 @@ import os
 import tifffile as tif
 import numpy as np
 import random
+import matplotlib.pyplot as plt
+plt.rc('font', size=18)
+
+import carreno.processing.transforms as tfs
 
 config_path = 'config.yml'
 
@@ -47,116 +51,24 @@ def get_config():
 #    return
 
 
-def split_volumes(vtype, valid, test, shuffle=False):
+def split_dataset(dir):
     """
-    Split volumes in dataset between training, validation and test.
-    Training ratio is whatever that's left.
+    Split dataset between training (60%), validation (20%) and test (20%).
+    volumes specified in YAML config file.
     Parameters
     ----------
-    vtype : str
-        Volume type in config['VOLUME'] for parsing name
-    valid : float
-        Validation data ratio over dataset
-    test : float
-        Test data ratio over dataset
-    shuffle : bool
-        Shuffle data
+    dir : str
+        Path to files to split
     Returns
     -------
-    train_data : [Path]
-        List of volumes for training
-    valid_data : [Path]
-        List of volumes for validation
-    test_data : [Path]
-        List of volumes for testing
+    train_data : list
+        List of training data
+    valid_data : list
+        List of validation data
+    test : list
+        List of evaluation data
     """
     config = get_config()
-    
-    # list ctrl and slik volumes
-    ctrl = []
-    slik = []
-    for f in os.listdir(config['VOLUME'][vtype]):
-        lower_f = f.lower()
-        if "ctrl" in lower_f:
-            ctrl.append(f)
-        elif "slik" in lower_f:
-            slik.append(f)
-    
-    if shuffle:
-        random.shuffle(ctrl)
-        random.shuffle(slik)
-
-    # find size for each categories
-    total_size = len(ctrl) + len(slik)
-    test_size =  np.round(total_size * test)
-    valid_size = np.round(total_size * valid)
-    #train_size = total_size - test_size - valid_size  # ex : 10 - 2 - 2 == 6
-    
-    def __fl_n_ce_of_half(x):
-        half = x / 2
-        return [int(i) for i in [np.floor(half), np.ceil(half)]]
-    
-    # split dataset
-    test_data, valid_data, train_data = [[]] * 3
-
-    # test data split
-    fl, ce = __fl_n_ce_of_half(test_size)
-    test_data = ctrl[-fl:] + slik[-ce:]
-    
-    # rm test data from data pool
-    ctrl = ctrl[:-fl]
-    slik = slik[:-ce]
-
-    # validation data split
-    fl, ce = __fl_n_ce_of_half(valid_size)
-    valid_data = ctrl[-fl:] + slik[-ce:]
-
-    # rm valid data from data pool
-    ctrl = ctrl[:-fl]
-    slik = slik[:-ce]
-
-    # training data split
-    train_data = ctrl + slik
-
-    # write split into yaml file TODO
-
-    return train_data, valid_data, test_data
-
-
-def split_patches(ptype, pouts, train, valid, test):
-    """
-    Split patches in dataset based on training, validation and test volumes.
-    Parameters
-    ----------
-    ptype : str
-        Patch type in config['PATCH'] for parsing name
-    pouts : [str]
-        Patch types in config['PATCH'] for output paths
-    train : [Path]
-        Training volume paths
-    valid : [Path]
-        Validation volume paths
-    test : [Path]
-        Testing volume paths
-    Returns
-    -------
-    train_data : dict
-        Dict of patches for training
-    valid_data : dict
-        Dict of patches for validation
-    test_data : dict
-        Dict of patches for testing
-    """
-    config = get_config()
-    
-    # rm file extensions
-    data = [train, valid, test]
-    for i in range(len(data)):
-        for j in range(len(data[i])):
-            data[i][j] = data[i][j].rsplit('.', 1)[0]
-    
-    # from here, we established which volume is used for train, validation
-    # or test but we need to group up patches for each of them
 
     def elem_with_substrings(x, substrings):
         """
@@ -180,61 +92,139 @@ def split_patches(ptype, pouts, train, valid, test):
                     contains.append(elem)
 
         return contains
-
+    
     # seperate patches based on split
-    patches = list(os.listdir(config['PATCH'][ptype]))
-    patch_set = []
-    for vol_set in data:
-        patch_set.append(elem_with_substrings(patches, vol_set))
+    vol = list(os.listdir(dir))
+    train, valid, test = [[] for i in range(3)]
+    
+    if not 'validation' in config['TRAINING'] or not 'evaluation' in config['TRAINING']:
+        # update config with random volumes for validation or evaluation
+        # TODO
+        ctrl_vol = elem_with_substrings(vol, ["ctrl"])
+        slik_vol = elem_with_substrings(vol, ["slik"])
+        pass
 
-    def add_dir_to_files(dir, files):
-        return [os.path.join(dir, f) for f in files]
+    target_vol = config['TRAINING']['validation']
+    for v in vol:
+        if v.rsplit(".", 1)[0] in target_vol:
+            valid.append(v)
+    
+    test_vol = config['TRAINING']['evaluation']
+    for v in vol:
+        if v.rsplit(".tif", 1)[0] in test_vol:
+            test.append(v)
+    
+    for v in vol:
+        if not v in valid and not v in test:
+            train.append(v)
+    
+    return train, valid, test
 
-    # add parent folders for a working file path
-    rtn_value = []
-    for patches_for_ctg in patch_set:
-        patch_dict = {}
-        for pout in pouts:
-            patch_dict[pout] = add_dir_to_files(config['PATCH'][pout], patches_for_ctg)
-        rtn_value.append(patch_dict)
 
-    return rtn_value
-
-
-def split_dataset(vtype, pouts, valid, test, shuffle=False):
+def augmentations(shape, norm_or_std, is_2D, n_color_ch):
     """
-    Split patches between training, validation and test.
-    Training ratio is whatever that's left.
+    Get augmentations for training and test data.
     Parameters
     ----------
-    vtype : str
-        Volume type in config['VOLUME'] for parsing name
-    pouts : [str]
-        Patch types in config['PATCH'] for output paths
-    valid : float
-        Validation data ratio over dataset
-    test : float
-        Test data ratio over dataset
-    shuffle : bool
-        Shuffle data
+    shape : [int]
+        Shape of data sample.
+    norm_or_std : bool
+        True for normalisation, False for standardization.
+    is_2D : bool
+        If the data is 2D or not.
+    n_color_ch : int
+        Number of color channel for X data.
     Returns
     -------
-    train_data : dict
-        Dict of patches for training
-    valid_data : dict
-        Dict of patches for validation
-    test_data : dict
-        Dict of patches for testing
+    train_aug : carreno.processing.transforms.Compose
+        List of transformations
+    test_aug : carreno.processing.transforms.Compose
+        List of transformations
     """
-    trn, vld, tst = split_volumes(vtype=vtype,
-                                  valid=valid,
-                                  test=test,
-                                  shuffle=shuffle)
-    return split_patches(ptype=vtype,
-                         pouts=pouts,
-                         train=trn,
-                         valid=vld,
-                         test=tst)
+    scaler = tfs.Normalize() if norm_or_std else tfs.Standardize()
+    squeeze_p = (1 if is_2D else 0)
+
+    train_aug = tfs.Compose(transforms=[
+        tfs.Read(),
+        tfs.PadResize(shape=shape, mode='reflect'),
+        tfs.Sample(shape=shape),
+        scaler,
+        tfs.Flip(axis=1, p=0.5),
+        tfs.Flip(axis=2, p=0.5),
+        tfs.Rotate([-30, 30], axes=[1,2], order=1, mode='reflect', p=0.5),
+        tfs.Squeeze(axis=0, p=squeeze_p),
+        tfs.Stack(axis=-1, n=n_color_ch)
+    ])
+    
+    test_aug = tfs.Compose(transforms=[
+        tfs.Read(),
+        tfs.PadResize(shape=shape, mode='reflect'),
+        tfs.Sample(shape=shape),
+        scaler,
+        tfs.Squeeze(axis=0, p=squeeze_p),
+        tfs.Stack(axis=-1, n=n_color_ch)
+    ])
+    
+    return train_aug, test_aug
+
+
+def plot_metrics(path, histories, verbose=0):
+    # metrics display (acc, loss, etc.)
+    graph_path = path
+
+    def get_color():
+        while 1:
+            for j in ['b', 'y', 'r', 'g']:
+                yield j
+    color = get_color()
+
+    for i in range(len(histories)):
+        history = histories[i]
+        epochs = np.array(history.history['epoch']) + 1
+        loss_hist = history.history['loss']
+        val_loss_hist = history.history['val_loss']
+        plt.plot(epochs, loss_hist, next(color), label='trn {}'.format(i))
+        plt.plot(epochs, val_loss_hist, next(color), label='val {}'.format(i))
+    plt.title('Training and validation loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(graph_path + "_loss.svg", format="svg")
+    plt.savefig(graph_path + "_loss.png")
+    plt.show() if verbose else plt.clf()
+    
+    for i in range(len(histories)):
+        history = histories[i]
+        epochs = np.array(history.history['epoch']) + 1
+        dice_hist = history.history['dice']
+        val_dice_hist = history.history['val_dice']
+        plt.plot(epochs, dice_hist, next(color), label='trn {}'.format(i))
+        plt.plot(epochs, val_dice_hist, next(color), label='val {}'.format(i))
+    plt.title('Training and validation F1')
+    plt.xlabel('Epochs')
+    plt.ylabel('F1 Score')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(graph_path + "_dice.svg", format="svg")
+    plt.savefig(graph_path + "_dice.png")
+    plt.show() if verbose else plt.clf()
+
+    for i in range(len(histories)):
+        history = histories[i]
+        epochs = np.array(history.history['epoch']) + 1
+        dice_hist = history.history['dicecldice']
+        val_dice_hist = history.history['val_dicecldice']
+        plt.plot(epochs, dice_hist, next(color), label='trn {}'.format(i))
+        plt.plot(epochs, val_dice_hist, next(color), label='val {}'.format(i))
+    plt.title('Training and validation DiceClDice')
+    plt.xlabel('Epochs')
+    plt.ylabel('DiceClDice Score')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(graph_path + "_dicecldice.svg", format="svg")
+    plt.savefig(graph_path + "_dicecldice.png")
+    plt.show() if verbose else plt.clf()
 
 
 def main():
@@ -244,7 +234,11 @@ def main():
         print(k)
         print(v)
     
-    print()
+    """
+    print("Patch split:")
+    for a, b, c in zip(*split_patches(cf['PATCH']['input'])):
+        print(a, b, c)
+    """
 
 
 if __name__ == "__main__":

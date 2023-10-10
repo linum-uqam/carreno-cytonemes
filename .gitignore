@@ -1,5 +1,6 @@
 # Custom
 data/
+wandb/
 .vs
 tmp*
 

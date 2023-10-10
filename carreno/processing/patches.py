@@ -2,7 +2,6 @@
 import numpy as np
 from skimage.transform import resize
 import patchify as p
-import scipy
 
 from carreno.utils.array import ndim_for_pixel
 
@@ -276,6 +275,8 @@ def volume_pred_from_img(model, x, stride, weight=None):
         volume to predict
     stride : [int]
         stride between patches without color axis
+    weight : ndarray
+        patch weight for reconstruction
     Returns
     -------
     pred_volume : ndarray
@@ -330,6 +331,8 @@ def volume_pred_from_vol(model, x, stride, weight=None):
         volume to predict
     stride : [int]
         stride between patches without color axis
+    weight : ndarray
+        patch weight for reconstruction
     Returns
     -------
     pred_volume : ndarray

@@ -5,26 +5,35 @@ import pathlib
 import tifffile as tif
 import os
 from pyunpack import Archive
-import scipy
+import scipy.special
+import scipy.ndimage
+import unittest
 
 # local imports
 import utils
 from carreno.io.fetcher import fetch_folder, folders_id
-from carreno.utils.util import normalize
+from carreno.utils.array import normalize
 from carreno.processing.weights import balanced_class_weights
-from carreno.processing.patches import patchify, reshape_patchify
 
-download =                  0  # False if the folders are already downloaded
-uncompress_raw =            0  # uncompress archives in raw data, error if uncompressed files are missing with options uncompress_raw and hand_drawn_cyto
-create_labeled_dataset =    0  # organise uncompressed labeled data
-create_sample_weights =     0  # make weight distributions for labeled data patches (during `create_labeled_dataset`)
-create_unlabeled_dataset =  1  # organise uncompressed unlabeled data
-create_patches =            1  # seperate volume into patches
-hand_drawn_cyto_dataset =   0  # save hand drawn cytonemes (2D) in data
-cleanup_uncompressed =      0  # cleanup extracted files in raw folder
+download                 = 1  # False if the folders are already downloaded
+uncompress_raw           = 1  # uncompress archives in raw data, error if uncompressed files are missing with options uncompress_raw and hand_drawn_cyto
+create_labeled_dataset   = 1  # organise uncompressed labeled data
+create_sample_weights    = 1  # make weight distributions for labeled data patches (during `create_labeled_dataset`)
+create_unlabeled_dataset = 1  # organise uncompressed unlabeled data
+hand_drawn_cyto_dataset  = 1  # save hand drawn cytonemes (2D) in data
+cleanup_uncompressed     = 1  # cleanup extracted files in raw folder
 
-config = utils.get_config()
-download_dir = config['BASE']['raw'].rsplit("/", 1)  # folder where downloads and dataset will be put, must not exist for download
+config        = utils.get_config()
+raw_dir       = config['DIR']['raw']
+drawing_dir   = config['DIR']['drawing']
+download_dir  = config['DIR']['raw'].rsplit("/", 1)[0]  # folder where downloads and dataset will be put, must not exist for download
+input_dir     = config['VOLUME']['input']
+target_dir    = config['VOLUME']['target']
+weight_dir    = config['VOLUME']['weight']
+starget_dir   = config['VOLUME']['soft_target']
+sweight_dir   = config['VOLUME']['soft_weight']
+unlabeled_dir = config['VOLUME']['unlabeled']
+blur          = config['PREPROCESS']['blur']
 
 # list of labeled volumes
 # volumes = [[path_to_volume, volume_name]]
@@ -40,7 +49,7 @@ volumes = [
     ['Envoi annotation/Slik 5.tif', 'slik5'],
     ['Slik 6.tif', 'slik6']
 ]
-volumes = [[os.path.join(config['BASE']['raw'], path), name] for path, name in volumes]
+volumes = [[os.path.join(raw_dir, path), name] for path, name in volumes]
 
 # list of labeled cytonemes
 cytonemes = [
@@ -55,7 +64,7 @@ cytonemes = [
     'Envoi annotation/Mask Cytoneme Slik5.tif',
     'Re annotation/Slik-6 deconvoluted-annotation-cytonemes.tif'
 ]
-cytonemes = [os.path.join(config['BASE']['raw'], path) for path in cytonemes]
+cytonemes = [os.path.join(raw_dir, path) for path in cytonemes]
 
 # list of labeled cell bodies
 bodies = [
@@ -70,11 +79,11 @@ bodies = [
     'Envoi annotation/Mask cell body Slik 5.tif',
     'Slik-6 deconvoluted-annotation-cell_body.tif'
 ]
-bodies = [os.path.join(config['BASE']['raw'], path) for path in bodies]
+bodies = [os.path.join(raw_dir, path) for path in bodies]
 
 # list of unlabeled volumes
 unlabeled_volumes = []
-for (dir, dirnames, filenames) in os.walk(config['BASE']['raw'] + '/Non annotated Data'):
+for (dir, dirnames, filenames) in os.walk(raw_dir + '/Non annotated Data'):
     for f in filenames:
         unlabeled_volumes.append(os.path.join(dir, f))
 
@@ -95,8 +104,8 @@ data = [
     ["Slik GFP 4_Sample_1", "Slik GFP 4_Sample_1.tif", "slik4"],
 ]
 for i in range(len(data)):
-    data[i][0] = os.path.join(config['BASE']['raw'], "Annotation Bon sens", data[i][0])
-    data[i][1] = os.path.join(config['BASE']['raw'], "Annotation Bon sens", data[i][1])
+    data[i][0] = os.path.join(raw_dir, "Annotation Bon sens", data[i][0])
+    data[i][1] = os.path.join(raw_dir, "Annotation Bon sens", data[i][1])
 
 
 def download_raw_data(path):
@@ -210,64 +219,14 @@ def create_dataset_target_folder(folder, volumes, cytonemes, bodies, blur=None):
 
         # Soft ground-truth https://arxiv.org/ftp/arxiv/papers/2011/2011.09041.pdf
         if not blur is None:
-            for axis in range(y.shape[-1]):
-                y[..., axis] = scipy.ndimage.gaussian_filter(y[..., axis], sigma=blur)
-        
-            # make sure everything is well distributed
-            scipy.special.softmax(y, axis=-1)
+            # blur axis less to respect anisotropic distances
+            dist_ratio = 0.26 / 0.1201058
+            y = scipy.ndimage.gaussian_filter(y, sigma=(blur/(dist_ratio), blur, blur, 0))
+            
+            # make sure everything is well distributed (last axis sum == 1)
+            y = (1 / y.sum(axis=-1))[..., np.newaxis] * y
 
         tif.imwrite(folder + '/' + volumes[i][1] + '.tif', y, photometric='rgb')
-
-
-def prepare_patches(volume_path, patch_folder, patch_shape, stride=None, mode=1):
-    """
-    Divide dataset in patches and save
-    Parameters
-    ----------
-    volume_path : list
-        TIF volumes paths
-    patch_folder : Path
-        Folder path for saving patches (overwrites!)
-    patch_shape : list
-        Patch desired shape
-    stride : list
-        Jump between patches, default to patch shape
-    mode : int
-        Interpolation mode (1:nearest-neighbor, 2:bilinear, 3:bicubic)
-    Returns
-    -------
-    p_path : list
-        TIF patches paths
-    """
-    # remove patches folders if they already exist
-    if os.path.isdir(patch_folder):
-        rmtree(patch_folder)
-    
-    # create folder
-    pathlib.Path(patch_folder).mkdir(parents=True, exist_ok=True)
-    
-    p_path = []
-    files = os.listdir(volume_path)
-
-    for i in range(len(files)):
-        inc = 0
-        v = tif.imread(volume_path + "/" + files[i])
-        p = patchify(v, patch_shape=patch_shape, stride=stride, resize_mode=mode)
-        p, __ = reshape_patchify(p, len(patch_shape))
-
-        for j in range(len(p)):
-            """ I'll stop filtering since I didn't test unbalance impact (and subjective)
-            # filter meaningless patches
-            threshold = np.prod(patch_shape[:-1]) * 0.05  # 5% of patch is body or cytonemes
-            if yp[j][:,:,:,1:3].sum() >= threshold:  # enough body and cyto
-                ...
-            """
-            name, _ = os.path.splitext(files[i])
-            p_path.append(patch_folder + "/" + name + "_" + str(inc) + '.tif')  # patches save path
-            tif.imwrite(p_path[-1], p[j])
-            inc += 1
-            
-    return p_path
 
 
 def create_sample_weight_folder(folder, target_folder):
@@ -373,28 +332,28 @@ def main():
     # Uncompress files
     if uncompress_raw:
         print("Uncompressing archives ...", end=" ")
-        uncompress_files_in_folder(config['BASE']['raw'])
+        uncompress_files_in_folder(raw_dir)
         print("done")
 
     # Prepare dataset for supervised training
     if create_labeled_dataset:
         # this will override input and target folders so be careful
         print("Creating labeled dataset from raw data ...", end=" ")
-        create_dataset_input_folder(config['VOLUME']['input'], volumes)
+        create_dataset_input_folder(input_dir, volumes)
         # hard labels
-        create_dataset_target_folder(config['VOLUME']['target'], volumes, cytonemes, bodies)
+        create_dataset_target_folder(target_dir, volumes, cytonemes, bodies)
         # soft labels
-        if config['PREPROCESS']['blur']:
-            create_dataset_target_folder(config['VOLUME']['soft_target'], volumes, cytonemes, bodies, blur=config['PREPROCESS']['blur'])
+        if blur:
+            create_dataset_target_folder(starget_dir, volumes, cytonemes, bodies, blur=blur)
         print("done")
     
     if create_sample_weights:
         print("Creating weights from labeled dataset ...", end=" ")
         # weights for hard labels
-        create_sample_weight_folder(config['VOLUME']['weight'], config['VOLUME']['target'])
+        create_sample_weight_folder(weight_dir, target_dir)
         # weights for soft labels
-        if config['PREPROCESS']['blur']:
-                create_sample_weight_folder(config['VOLUME']['soft_weight'], config['VOLUME']['soft_target'])
+        if blur:
+            create_sample_weight_folder(sweight_dir, starget_dir)
         print("done")
 
     # Prepare dataset for self supervised training
@@ -403,67 +362,19 @@ def main():
         print("Creating unlabeled dataset from raw data ...", end=" ")
         #filenames = [str(i) for i in range(len(unlabeled_volumes))]
         filenames = [os.path.splitext(os.path.basename(fn))[0] for fn in unlabeled_volumes]  # get filenames w/ extensions (very long)
-        create_dataset_input_folder(config['VOLUME']['unlabeled'], list(zip(unlabeled_volumes, filenames)))
-        print("done")
-
-    # Create patches
-    if create_patches:
-        print("Creating patches ...", end=" ")
-        if create_labeled_dataset:
-            # x
-            prepare_patches(config['VOLUME']['input'],
-                            config['PATCH']['input'],
-                            config['PREPROCESS']['patch'],
-                            stride=config['PREPROCESS']['stride'],
-                            mode=2)
-            # y
-            prepare_patches(config['VOLUME']['target'],
-                            config['PATCH']['target'],
-                            config['PREPROCESS']['patch']+[3],
-                            stride=config['PREPROCESS']['stride']+[3],
-                            mode=1)
-            
-            if config['PREPROCESS']['blur']:
-                # soft y
-                prepare_patches(config['VOLUME']['soft_target'],
-                                config['PATCH']['soft_target'],
-                                config['PREPROCESS']['patch']+[3],
-                                stride=config['PREPROCESS']['stride']+[3],
-                                mode=1)
-            
-        if create_sample_weights:
-            # w
-            prepare_patches(config['VOLUME']['weight'],
-                            config['PATCH']['weight'],
-                            config['PREPROCESS']['patch'],
-                            stride=config['PREPROCESS']['stride'],
-                            mode=1)
-            if config['PREPROCESS']['blur']:
-                # soft w
-                prepare_patches(config['VOLUME']['soft_weight'],
-                                config['PATCH']['soft_weight'],
-                                config['PREPROCESS']['patch'],
-                                stride=config['PREPROCESS']['stride'],
-                                mode=1)
-        
-        if create_unlabeled_dataset:
-            prepare_patches(config['VOLUME']['unlabeled'],
-                            config['PATCH']['unlabeled'],
-                            config['PREPROCESS']['patch'],
-                            stride=config['PREPROCESS']['stride'],
-                            mode=2)
+        create_dataset_input_folder(unlabeled_dir, list(zip(unlabeled_volumes, filenames)))
         print("done")
 
     # Copy hand drawn annotations
     if hand_drawn_cyto_dataset:
         print("Copying hand drawn annotations ...", end=" ")
-        hand_drawn_cyto(config['BASE']['drawing'])
+        hand_drawn_cyto(drawing_dir)
         print("done")
 
     # Cleanup uncompressed files
     if cleanup_uncompressed:
         print("Cleaning uncompressed files ...", end=" ")
-        delete_uncompressed_files(config['BASE']['raw'])
+        delete_uncompressed_files(raw_dir)
 
         # custom delete
         others = ["GFP 1_Sample_1.zip",
@@ -474,9 +385,9 @@ def main():
                   "Slik-4-1.zip"]
     
         for f in others:
-            full_path = config['BASE']['raw'] + '/' + f
+            full_path = raw_dir + '/' + f
             
-            # kill it in cold blood (hope it wasn't important)
+            # kill file in cold blood (hope it wasn't important)
             if os.path.isfile(full_path):
                 os.remove(full_path)
             elif os.path.isdir(full_path):
@@ -485,38 +396,42 @@ def main():
         print("done")
 
 
-def tests():
-    # make sure volume shape is uniform throughout x, y and w
-    volume_per_ctg = {}
-    
-    def listdir_w_path(path):
-        return [os.path.join(path, f) for f in os.listdir(path)]
-
-    if os.path.exists(config['VOLUME']['input']):
-        volume_per_ctg['x'] = listdir_w_path(config['VOLUME']['input'])
-    
-    if os.path.exists(config['VOLUME']['target']):
-        volume_per_ctg['y'] = listdir_w_path(config['VOLUME']['target'])
-    
-    if os.path.exists(config['VOLUME']['weight']):
-        volume_per_ctg['w'] = listdir_w_path(config['VOLUME']['weight'])
-
-    if os.path.exists(config['VOLUME']['soft_target']):
-        volume_per_ctg['sy'] = listdir_w_path(config['VOLUME']['target'])
-    
-    if os.path.exists(config['VOLUME']['soft_target']):
-        volume_per_ctg['sw'] = listdir_w_path(config['VOLUME']['target'])
-    
-    available = list(volume_per_ctg.keys())
-    template = volume_per_ctg[available[0]]
-    for i in range(1, len(available)):
-        compared_volumes = volume_per_ctg[available[i]]
-        for t, v in zip(template, compared_volumes):
-            x = tif.imread(t)
-            y = tif.imread(v)
-            assert x.shape[:3] == y.shape[:3], "shape mismatch between template {} ({}) and {} ({})".format(t, x.shape, v, y.shape)
-
-
 if __name__ == "__main__":
     main()
-    tests()
+    
+    class TestDataset(unittest.TestCase):
+        def test_shape(self):
+            def listdir_w_path(path):
+                return [os.path.join(path, f) for f in os.listdir(path)]
+
+            # make sure volume shape is uniform throughout x, y and w
+            volume_per_ctg = {}
+    
+            if os.path.exists(input_dir):
+                volume_per_ctg['x'] = listdir_w_path(input_dir)
+            
+            if os.path.exists(target_dir):
+                volume_per_ctg['y'] = listdir_w_path(target_dir)
+            
+            if os.path.exists(weight_dir):
+                volume_per_ctg['w'] = listdir_w_path(weight_dir)
+        
+            if os.path.exists(starget_dir):
+                volume_per_ctg['sy'] = listdir_w_path(target_dir)
+            
+            if os.path.exists(sweight_dir):
+                volume_per_ctg['sw'] = listdir_w_path(sweight_dir)
+            
+            available = list(volume_per_ctg.keys())
+            template = volume_per_ctg[available[0]]
+            for i in range(1, len(available)):
+                compared_volumes = volume_per_ctg[available[i]]
+                for t, v in zip(template, compared_volumes):
+                    x = tif.imread(t)
+                    y = tif.imread(v)
+                    valid = x.shape[:3] == y.shape[:3]
+                    self.assertTrue(valid)
+                    if not valid:
+                        print("shape mismatch between template {} ({}) and {} ({})".format(t, x.shape, v, y.shape))
+            
+    unittest.main()
