@@ -68,7 +68,9 @@ def metadata(path):
 
 
 def write_imagej_tif(path, x, axes="ZYX", distances=[1, 1, 1], units=['µm', 'µm', 'µm']):
-    """Write a tif image with a minimum of useful metadata (update depending on needs)
+    """
+    Write a tif image with a minimum of useful metadata (update depending on needs)
+    Bug : only works for grayscale
     Parameters
     ----------
     path : str, Path

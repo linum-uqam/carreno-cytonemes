@@ -19,7 +19,6 @@ def layers(ndim):
     # https://stackoverflow.com/questions/39376763/in-python-how-to-deep-copy-the-namespace-obj-args-from-argparse
     # to avoid passing tf.keras.layers as a reference
     layers = Namespace(**vars(tf.keras.layers))
-
     # add XD functions lol
     if ndim == 2:
         layers.ConvXD =          tf.keras.layers.Conv2D
@@ -29,7 +28,6 @@ def layers(ndim):
         layers.ConvXD =          tf.keras.layers.Conv3D
         layers.MaxPoolingXD =    tf.keras.layers.MaxPooling3D
         layers.ConvXDTranspose = tf.keras.layers.Conv3DTranspose
-
     return layers
 
 
@@ -49,10 +47,8 @@ def weight2D_to_3D(weights, dim):
     """
     weight3D = np.zeros([dim] + list(weights.shape), dtype=weights.dtype)
     avg_w = weights / dim
-    
     # add avg weights over third axis
     weight3D[:] = avg_w
-    
     return weight3D
 
 
@@ -96,7 +92,6 @@ def get_layer_parent_i(layer, model):
             parent_i.append(layer_names.index(name))
         except:
             pass
-    
     return parent_i
 
 
@@ -139,10 +134,8 @@ def model2D_to_3D(model, inp_ndim=64):
     nshape = [inp_ndim, *model.layers[0].input_shape[0][1:]]
     layers2D = layers(2)
     layers3D = layers(3)
-
     # x contains all the layers
     x = [layers3D.Input(nshape)]
-
     # process hidden layers
     conv_weights_transfer = []
     batch_norm_weights_transfer = []
@@ -215,47 +208,37 @@ def model2D_to_3D(model, inp_ndim=64):
         else:
             # hope for the best and use layer as it is
             x.append(l(x[-1]))
-
     nmodel = tf.keras.Model(x[0], x[-1])
-
     # transfer learning for conv
     for i in conv_weights_transfer:
         w2D, bias = model.layers[i].get_weights()
         ndim = nmodel.layers[i].kernel_size[0]
         w3D = weight2D_to_3D(w2D, ndim)
         nmodel.layers[i].set_weights([w3D, bias])
-
     # transfer learning for batch norm
     for i in batch_norm_weights_transfer:
         nmodel.layers[i].set_weights(model.layers[i].get_weights())
-
     return nmodel
 
 
 class ReluNormalization(tf.keras.layers.Layer):
-    def __init__(self, n_class):
-        super(ReluNormalization, self).__init__()
+    def __init__(self, n_class, name='relu_normalization', trainable=False, dtype=None):
+        super(ReluNormalization, self).__init__(name=name, trainable=trainable, dtype=dtype)
         self.n_class = n_class
-
     def build(self, input_shape=None):
         pass
-
     def call(self, inputs):
         # Based on SoftSeg normalisation of ReLU output
         # https://ivadomed.org/_modules/ivadomed/models.html#Unet
         # Important since ReLU output range goes to infinity n beyond
         normalize = inputs / tf.reduce_max(inputs)
-        
         # handle division by 0
         outputs = tf.where(tf.math.is_nan(normalize), tf.zeros_like(normalize), normalize)
-
         if self.n_class > 0:
             all_sums = tf.expand_dims(tf.reduce_sum(outputs, axis=-1), axis=-1)
             all_sums = tf.where(all_sums == 0, tf.ones_like(all_sums), all_sums)
             outputs = outputs / all_sums
-        
         return outputs
-
     def get_config(self):
         config = super(ReluNormalization, self).get_config()
         config.update({"n_class": self.n_class})
@@ -263,7 +246,7 @@ class ReluNormalization(tf.keras.layers.Layer):
         
 
 class NormalizeRange(tf.keras.layers.Layer):
-    def __init__(self, vmin=0, vmax=1, axis=-1):
+    def __init__(self, vmin=0, vmax=1, axis=-1, name='normalize_range', trainable=False, dtype=None):
         """
         Linear normalization layer for axis -1
         Parameters
@@ -274,11 +257,10 @@ class NormalizeRange(tf.keras.layers.Layer):
             Min value
         """
         assert vmin <= vmax
-        super().__init__()
+        super(NormalizeRange, self).__init__(name=name, trainable=trainable, dtype=dtype)
         self.vmin = vmin
         self.diff = vmax - vmin
-        self.axis = -1
-        
+        self.axis = axis 
     def call(self, inputs):
         """
         Linear normalization layer for axis -1
@@ -302,18 +284,15 @@ class NormalizeRange(tf.keras.layers.Layer):
 
 if __name__ == "__main__":
     import unittest
-
     class TestLayers(unittest.TestCase):
         def test_norm(self):
             x = np.array([[[1,2,3], [-1, -2, -3], [0, 0.5, 1], [0, 0, 0]]])
             batch = tf.convert_to_tensor(np.expand_dims(x, axis=0), dtype=tf.float32)
-            
             # between 0 and 1
             layer = NormalizeRange(vmin=0, vmax=1, axis=-1)
             result = layer(batch).numpy()
             self.assertEqual(np.round(result.sum(), 5), 3)
             self.assertEqual(np.round(result[0,0,0].sum(), 5), 1)
-
             # between -1 and 1
             layer = NormalizeRange(vmin=0, vmax=1, axis=-1)
             result = layer(batch).numpy()

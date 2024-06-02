@@ -23,11 +23,9 @@ def associate_cytoneme(body_label, cyto_label):
     if not body_label.any():
         return []
 
-    lv = 0.9   # low value (as long as it is < 1)
-    hv = 1e10  # high value
-    body_mask = body_label > 0
-    body_dist = nd.distance_transform_edt(body_mask)
-    body_dist[body_dist == 0] = lv
+    # distances from cells per different bodies over the axis 0
+    body_masks = [body_label == i for i in range(1, body_label.max() + 1)]
+    body_dists = np.array([nd.distance_transform_edt(~bm) for bm in body_masks])
 
     # list of associated cytonemes per body
     association = []
@@ -35,14 +33,14 @@ def associate_cytoneme(body_label, cyto_label):
         association.append([])
 
     # fill association
-    for lb in range(1, cyto_label.max()):
+    for lb in range(1, cyto_label.max() + 1):
         cyto = cyto_label == lb
-        cyto_dist = nd.distance_transform_edt(np.logical_not(cyto))
-        cyto_dist[cyto_dist == 0] = hv
-        
-        # closest point on a body TODO consider all min for handling cyto intersections
-        depth, row, column = np.unravel_index(np.argmin(body_dist * cyto_dist), body_mask.shape)
+        cyto = np.stack([cyto] * body_dists.shape[0], axis=0)
 
-        association[body_label[depth, row, column] - 1].append(lb)
+        # considering only the cyto coordinates, check which has the minimum distance to a cell body
+        # get the body_dists axis 0 of this minimum to find which body is the closest
+        min_dist = np.where(cyto)[0][body_dists[cyto].argmin()]
+
+        association[min_dist].append(lb)
     
     return association

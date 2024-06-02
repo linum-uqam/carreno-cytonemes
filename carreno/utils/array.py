@@ -61,15 +61,38 @@ def euclidean_dist(coord1, coord2=0, dist=None):
         diff = diff * dist
     
     return (diff ** 2).sum() ** 0.5
-    
+
+
+def pythagore_length(vector):
+    """
+    Pythagore length calculation for a vector
+    (From 0 to vector index)
+    Parameters
+    ----------
+    vector : [float, ...]
+        vector indexes
+    Returns
+    -------
+    __ : float
+        vector length
+    """
+    v = np.array(vector)
+    return (v ** 2).sum() ** 0.5
+
 
 def unstack(a, axis=0):
     """
     Unstack ndarray. The Opposite of numpy.stack()
-
-    :param a: array like ndarray
-    :param axis: axis to unstack
-    :return: unstacked array
+    Parameters
+    ----------
+    a: ndarray
+        ndarray to unstack
+    axis: int
+        axis to unstack
+    Returns
+    -------
+    __ : ndarray
+        unstacked array
     """
     return [np.squeeze(e, axis) for e in np.split(a, a.shape[axis], axis=axis)]
     
@@ -140,3 +163,40 @@ def butterworth(n, low, high, shift=0):
     D = np.sqrt((u-n/2)**2)
     h = 1 / (1 + (D/low)**(2*high))
     return h
+
+
+def gaussian_kernel(shape, sigma=10):
+    """
+    Get a gaussian kernel of a specified shape for sigma
+    Parameters
+    ----------
+    shape : [int]
+        kernel shape
+    sigma : float
+        distribution width
+    Returns
+    -------
+    kernel : ndarray
+        gaussian kernel
+    """
+    if len(shape) > 2:
+        shape[1:3] = reversed(shape[1:3])
+    if len(shape) > 1:
+        shape[:2] = reversed(shape[:2])
+
+    axes = []
+    for ax in shape:
+        start = -int(np.floor(ax/2))
+        end   = int(np.ceil(ax/2))
+        sequence = np.arange(start, end)
+        axes.append(sequence)
+    
+    mesh_axes = np.meshgrid(*axes)
+    sum = np.zeros_like(mesh_axes[0])
+    for mesh in mesh_axes:
+        sum = sum + mesh ** 2
+    
+    divider = 2 * sigma ** 2
+    kernel = np.exp(-sum / divider)
+    
+    return kernel

@@ -9,12 +9,12 @@ import skimage.restoration
 import skimage.feature
 import skimage.segmentation
 import scipy.ndimage as nd
-import tensorflow as tf
 
 import carreno.utils.morphology
 import carreno.utils.array
 import carreno.processing.categorical
 import carreno.processing.patches
+from carreno.cell.path import extract_metric
 
 
 class Pipeline:
@@ -24,7 +24,7 @@ class Pipeline:
     def train(self, x, y):
         raise NotImplementedError
 
-    def restore(self, x, psf=None, iteration=50, nlm_size=7, nlm_dist=11, r=50, amount=10, md_size=(1,3,3), butterworth=None):
+    def restore(self, x, psf=None, iteration=50, nlm_size=7, nlm_dist=11, r=50, amount=8, md_size=(3,5,5), butterworth=None):
         """
         Parameters
         ----------
@@ -86,90 +86,17 @@ class Pipeline:
     def segmentation(self, x):
         raise NotImplementedError
     
-    def postprocessing(self, pred, s1=1000, s2=100):
-        """
-        Corrections to prediction :
-        1. Convert small bodies into cytonemes
-        2. Removes small regions
-        Parameters
-        ----------
-        pred : ndarray
-            Prediction volume
-        s1 : float
-            Minimum area for body in um
-        s2 : float
-            Minimum area for region in um
-        Returns
-        -------
-        pred : ndarray
-            Updated prediction volume
-        """
-        process = pred.copy()
-
-        def get_small_obj(x, size, distances=[1,1,1]):
-            lb = skimage.measure.label(x)
-            px_superficie = np.prod(distances)
-            rp = skimage.measure.regionprops(lb)
-            y = np.zeros_like(x)
-            min_px = size * px_superficie
-            for p in rp:
-                if p.area <= min_px:
-                    y[lb == p.label] = 1
-            return y
-        
-        # convert small bodies to cyto
-        process[get_small_obj(pred[..., 2], s1, distances=self.distances)] = [0,1,0]
-
-        # remove cytonemes that are too small
-        process = np.logical_and(pred, np.logical_not(get_small_obj(pred, s2, distances=self.distances)))
-
-        return process
-
-    def analyse(self, pred):
-        def seperate_blobs(x, min_dist=5, num_peaks=np.inf, distances=[1, 1, 1]):
-            """Separate blobs using watershed. Seeds are found using the foreground pixels distance from background pixels.
-            Parameters
-            ----------
-            x : list, ndarray
-                binary mask of blobs
-            min_dist : float
-                minimum distance between seeds for watershed
-            distances : list, ndarray
-                axis distances in order
-            Returns
-            -------
-            label : ndarray
-                labelled blob
-            """
-            y = x.copy()
-
-            # find 1 local max per blob
-            distance = nd.distance_transform_edt(y)
-            min_dist = int(min_dist / min(distances))
-
-            coords = skimage.feature.peak_local_max(distance,
-                                                    min_distance=min_dist,
-                                                    num_peaks=num_peaks,
-                                                    labels=y)
-
-            # seperate the cells
-            local_max = np.zeros(distance.shape, dtype=bool)
-            local_max[tuple(coords.T)] = True
-            markers = nd.label(local_max)[0]
-            label = skimage.segmentation.watershed(-distance, markers, mask=y)
-
-            return label
-        
-        n_peaks = int((pred == 2).sum() // (500 / np.prod(self.distances)))
-        bodies = seperate_blobs(pred == 2, min_dist=3, num_peaks=n_peaks, distances=self.distances)
-        raise NotImplementedError
+    def analyse(self, pred, output):
+        x = carreno.processing.categorical.categorical_to_sparse(pred)
+        extract_metric(body_m=x==3, cyto_m=x==2, csv_output=output, distances=self.distances)
+        return
 
 
 class Threshold(Pipeline):
     def __init__(self, distances=(0.26, 0.1201058, 0.1201058)):
         super().__init__(distances=distances)
 
-    def segmentation(self, x, ro=0.5, rc=1):
+    def segmentation(self, x, ro=1.0, rc=1.5):
         """
         Parameters
         ----------
@@ -185,18 +112,15 @@ class Threshold(Pipeline):
             volume segmented between background, cytoneme and body classes
         """
         otsu = x > skimage.filters.threshold_otsu(x, nbins=256)
-        
         def separate_cls(x, selem):
             body = skimage.morphology.binary_opening(x, selem).astype(np.uint8)
             cyto = ((x - body) > 0).astype(np.uint8)
             return body * 2 + cyto
-        
         def seperate_cls_w_closing(x, ro, rc, distances=[1,1,1]):
             # structuring element in 2D since third axis is inconsistent
             sphere = carreno.utils.morphology.create_sphere(ro, distances)
             disk = np.expand_dims(np.amax(sphere, axis=0), axis=0)  # disk instead of sphere
             y = separate_cls(x, selem=disk)
-
             # fill bodies
             body = y == 2
             sphere = carreno.utils.morphology.create_sphere(rc, distances)
@@ -205,16 +129,15 @@ class Threshold(Pipeline):
                 dilate[i] = nd.morphology.binary_fill_holes(dilate[i])
             closing = skimage.morphology.binary_erosion(dilate, sphere)
             y[closing] = 2
-
             # try seperating classes again
             y = separate_cls(y > 0, selem=disk)
-
             return y
-
-        cls = seperate_cls_w_closing(otsu, ro=ro, rc=rc, distances=self.distances)
-        cls = carreno.processing.categorical.sparse_to_categorical(cls+1, 3)
-
-        return cls
+        pred = seperate_cls_w_closing(otsu, ro=ro, rc=rc, distances=self.distances)
+        pred = carreno.processing.categorical.sparse_to_categorical(pred+1, 3)
+        # in case values are missing, we default to cell body
+        missing = 1 - pred.sum(axis=-1)
+        pred[..., 2] = pred[..., 2] + missing
+        return pred
 
 
 class UNet2D(Pipeline):
@@ -222,11 +145,11 @@ class UNet2D(Pipeline):
         """
         Parameters
         ----------
-        model : str, Path
-            Path to UNet 2D model
+        model2D : model
+            UNet 3D keras model
         """
         super().__init__(distances=distances)
-        self.model2D = tf.keras.models.load_model(model2D, compile=False)
+        self.model2D = model2D
 
     def segmentation(self, x, stride, weight=None):
         """
@@ -246,24 +169,27 @@ class UNet2D(Pipeline):
         """
         pred = carreno.processing.patches.volume_pred_from_img(
             self.model2D,
-            np.expand_dims(x, axis=-1),  # add color axis for grayscale img
+            x if len(x.shape) >= 4 else np.expand_dims(x, axis=-1),  # add color axis
             [1] + stride,
             None if weight is None else np.expand_dims(weight, axis=0))
-        return np.squeeze(pred, axis=-1) # remove batch size axis
+        # in case values are missing, we default to cell body
+        missing = 1 - pred.sum(axis=-1)
+        pred[..., 2] = pred[..., 2] + missing
+        return pred # remove batch size axis
 
 
-class UNet3D(UNet2D):
+class UNet3D(Pipeline):
     def __init__(self, model3D, distances=(0.26, 0.1201058, 0.1201058)):
         """
         Parameters
         ----------
-        model3D : str, Path
-            Path to UNet 3D model
+        model3D : model
+            UNet 3D keras model
         """
         super().__init__(distances=distances)
-        self.model3D = tf.keras.models.load_model(model3D, compile=False)
+        self.model3D = model3D
 
-    def segmentation(self, x, stride, weight):
+    def segmentation(self, x, stride, weight=None):
         """
         Load UNet 3D model and predict volume in patches
         Parameters
@@ -281,9 +207,12 @@ class UNet3D(UNet2D):
         """
         pred = carreno.processing.patches.volume_pred_from_vol(
             self.model3D,
-            x,
+            x if len(x.shape) >= 4 else np.expand_dims(x, axis=-1),  # add color axis
             stride,
-            weight)
+            None if weight is None else weight)
+        # in case values are missing, we default to cell body
+        missing = 1 - pred.sum(axis=-1)
+        pred[..., 2] = pred[..., 2] + missing
         return pred
 
 

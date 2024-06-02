@@ -5,9 +5,9 @@ import os
 from pathlib import Path
 from skimage.segmentation import watershed
 from skimage.measure import regionprops
+from skimage.morphology import skeletonize_3d
 
 from carreno.cell.body import associate_cytoneme
-from skimage.morphology import skeletonize_3d
 from carreno.utils.morphology import getNeighbors3D, seperate_blobs
 from carreno.io.csv import cells_info_csv
 import carreno.utils.array as utils
@@ -33,14 +33,31 @@ def path_length(coordinates, distances=[1, 1, 1]):
     return length
 
 
-def dot_product_theta(vector1, vector2):
-    """dot product to find theta between 2 vectors
+def normalize_vector(vector):
+    """Normalize vector to get a length of one
     Parameters
     ----------
-    vector1 : list
-        a list of 2 points representing a vector
-    vector2 : list
-        another list of 2 points representing a vector
+    vector : [float, ...]
+        a list of indexes representing a vector
+    Returns
+    -------
+    nvector : [float, ...]
+        normalize vector (length of 1)
+    """
+    v = np.array(vector) 
+    length = utils.pythagore_length(v)
+    nvector = v / length
+    return nvector
+
+
+def dot_product_theta(vector1, vector2):
+    """dot product to find theta between 2 normalized vectors
+    Parameters
+    ----------
+    vector1 : [float, ...]
+        a list of indexes representing a vector
+    vector2 : [float, ...]
+        another list of indexes representing a vector
     Returns
     -------
     dot_product : float
@@ -49,13 +66,12 @@ def dot_product_theta(vector1, vector2):
     """
     # https://www.math10.com/en/geometry/vectors-operations/vectors-operations.html
     # Example 12
+    
     v1 = np.array(vector1)
     v2 = np.array(vector2)
-    dt_pd = (v1 + v2).sum()
-    norm1 = (v1 * v1).sum() * 0.5
-    norm2 = (v2 * v2).sum() * 0.5
-    
-    return dt_pd / (norm1 * norm2)
+    norm_product = utils.pythagore_length(v1) * utils.pythagore_length(v2)
+    dot_product = (v1 * v2).sum() / norm_product
+    return dot_product
 
 
 def connectivity_matrix(x):
@@ -249,7 +265,7 @@ def dfs_path_search(seed, coordinates, matrix, end_coordinates=None):
     # dfs var
     node_stack = [seed]
     current_path = [seed]
-    path_dot_product = [1]
+    current_path_dot_product = [1]
 
     # if a point as 4 neighbors or more, we could revisit nodes
     # after unstacking, so we avoid visited points in intersections
@@ -271,16 +287,17 @@ def dfs_path_search(seed, coordinates, matrix, end_coordinates=None):
         if nb_neigh == 0:        
             if end_coordinates is None or current_path[-1] in end_coordinates:
                 # path is done and saved
-                # unsure why, but paths in "paths" vars are emptied after loop if we don't make copies
+                # paths vars are emptied after loop if we don't make copies
                 paths.append(current_path.copy())
-                paths_dot_product.append(path_dot_product.copy())
+                paths_dot_product.append(current_path_dot_product.copy())
 
             # Regress path until we find next path in node_stack
+            # if the stack is empty, search is over
             while len(node_stack) != 0:
                 if current_path[-1] == node_stack[-1]:
                     current_path.pop(-1)
                     node_stack.pop(-1)
-                    path_dot_product.pop(-1)
+                    current_path_dot_product.pop(-1)
                 else:
                     # found a different path
                     current_path.append(node_stack[-1])
@@ -289,21 +306,16 @@ def dfs_path_search(seed, coordinates, matrix, end_coordinates=None):
                     length = len(current_path)
                     v1 = (coordinates[current_path[max(0, length-3)]], coordinates[current_path[length-2]])
                     v2 = (coordinates[current_path[length-2]], coordinates[current_path[length-1]])
-                    dt_pd = dot_product_theta(v1, v2)
-
-                    path_dot_product.append(dt_pd)
+                    dt_pd = dot_product_theta(normalize_vector(v1), normalize_vector(v2))
+                    current_path_dot_product.append(dt_pd)
 
                     # stop clearing stack and resume search
                     break
-
-            # stack is empty, search is over
-
         elif nb_neigh == 1:
             # continue path without worry
             node_stack.append(neighbors[0])
             current_path.append(node_stack[-1])
-            path_dot_product.append(1)  # 100% probability
-
+            current_path_dot_product.append(1)  # 100% probability
         else:
             # multiple neighbors, deal with intersections
             for neigh in neighbors:
@@ -315,9 +327,9 @@ def dfs_path_search(seed, coordinates, matrix, end_coordinates=None):
             length = len(current_path)
             v1 = (coordinates[current_path[max(0, length-3)]], coordinates[current_path[length-2]])
             v2 = (coordinates[current_path[length-2]], coordinates[current_path[length-1]])
-            dt_pd = dot_product_theta(v1, v2)
+            dt_pd = dot_product_theta(normalize_vector(v1), normalize_vector(v2))
             
-            path_dot_product.append(dt_pd)
+            current_path_dot_product.append(dt_pd)
             
             # make sure we don't revisit this point again
             visited_intersection.append(current_path[-1])
@@ -345,7 +357,7 @@ def extract_metric(body_m, cyto_m, csv_output, distances=[1, 1, 1]):
     # associate cytonemes to body
     association = associate_cytoneme(body_lb, cyto_lb)
 
-    for i in range(body_lb.max()):
+    for i in range(len(association)):
         b = body_lb == i + 1  # body for label i+1
         
         # body metrics
@@ -354,7 +366,7 @@ def extract_metric(body_m, cyto_m, csv_output, distances=[1, 1, 1]):
         body_z_end = np.amax(coords[0])
 
         # ratio of cytonemes to cell pixel
-        nb_cyto_px = sum(cyto_region[cyto].area for cyto in association[i])
+        nb_cyto_px = sum(cyto_region[cyto-1].area for cyto in association[i])
         nb_cell_px = b.sum()
         ratio = nb_cyto_px / nb_cell_px
         
@@ -374,3 +386,31 @@ def extract_metric(body_m, cyto_m, csv_output, distances=[1, 1, 1]):
     folder = os.path.dirname(csv_output)
     Path(folder).mkdir(parents=True, exist_ok=True)
     cells_info_csv(csv_output, cells_info, distances)
+
+
+if __name__ == "__main__":
+    import unittest
+    class TestPath(unittest.TestCase):
+        def test_norm(self):
+            x = [0, 1]
+            y = normalize_vector(x)
+            self.assertTrue((x == y).all())
+            x = np.array([2, 2, 2, 2])
+            y = normalize_vector(x)
+            self.assertTrue((x/4 == y).all())
+        
+        def test_dot_pd(self):
+            v1 = [2, 0]
+            v2 = [0.5, 0]
+            dp = dot_product_theta(v1, v2)
+            self.assertEqual(dp, 1)
+            v1 = [0, 1]
+            v2 = [0, -1]
+            dp = dot_product_theta(v1, v2)
+            self.assertEqual(dp, -1)
+            v1 = [0, 1]
+            v2 = [1, 0]
+            dp = dot_product_theta(v1, v2)
+            self.assertEqual(dp, 0)
+
+    unittest.main()

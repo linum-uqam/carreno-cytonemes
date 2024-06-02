@@ -56,7 +56,7 @@ def patchify(x, patch_shape, stride=None, resize_mode=2, pad_mode='constant', co
         stride = patch_shape
     
     resize_shape = []
-    
+
     for i in range(len(patch_shape)):
         xax = x.shape[i]
         pax = patch_shape[i]
@@ -72,7 +72,7 @@ def patchify(x, patch_shape, stride=None, resize_mode=2, pad_mode='constant', co
         resize_shape.append(ax_length)
 
     resized = x.copy()
-        
+    
     if resize_mode == 0:
         # add padding to fit
         axis_padding = np.abs(np.array(x.shape) - np.array(resize_shape))
@@ -107,7 +107,7 @@ def unpatchify_w_nearest(patches, order, patch_shape, stride=None):
     Parameters
     ----------
     patches : list
-        Iterator for of patches to reassemble
+        Iterator of patches to reassemble
         (avoid loading every patches at once for the sake of your memory)
     order : list
         Patch order for reassembly
@@ -172,7 +172,7 @@ def unpatchify_w_weight(patches, order, patch_shape, stride=None, weight=None):
     Parameters
     ----------
     patches : list
-        Iterator for of patches to reassemble
+        Iterator of patches to reassemble
         (avoid loading every patches at once for the sake of your memory)
     order : list
         Patch order for reassembly
@@ -255,7 +255,7 @@ def __pred_iterator(model, xs, is_img=True):
     """
     for x in xs:
         # predict patch segmentation one at a time
-        pred_patch = model.predict(np.array([x]))
+        pred_patch = model.predict(np.array([x]), verbose=0)
 
         # rm batch axis
         if not is_img:
@@ -291,7 +291,7 @@ def volume_pred_from_img(model, x, stride, weight=None):
     patch = patchify(x,
                      patch_shape=input_patch_shape,
                      stride=input_stride,
-                     resize_mode=0)
+                     resize_mode=1)
     patch, order = reshape_patchify(patch, len(input_patch_shape))
     
     # remove z axis (we want an image)
@@ -341,12 +341,12 @@ def volume_pred_from_vol(model, x, stride, weight=None):
     # get input shape
     input_patch_shape = list(model.layers[0].input.shape[1:])
     input_stride = list(stride) + input_patch_shape[len(stride):]
-
+    
     # patchify to fit inside model input
     patch = patchify(x,
                      patch_shape=input_patch_shape,
                      stride=input_stride,
-                     resize_mode=0)
+                     resize_mode=1)
     patch, order = reshape_patchify(patch, len(input_patch_shape))
     
     # to avoid memory issues, use an iterator for prediction

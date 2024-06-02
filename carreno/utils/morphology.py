@@ -2,10 +2,8 @@
 import numpy as np
 from scipy import ndimage as nd
 from carreno.utils.array import euclidean_dist
-from skimage.measure import regionprops
 from skimage.feature import peak_local_max
 from skimage.segmentation import watershed
-from skimage.morphology import binary_opening
 
 
 def getNeighbors(index, data, structure=None):
@@ -111,7 +109,7 @@ def create_sphere(radius, distances=[1, 1, 1]):
     return sphere
 
 
-def seperate_blobs(x, min_dist=10, distances=[1, 1, 1]):
+def seperate_blobs(x, min_dist=3, num_peaks=20, distances=[1, 1, 1]):
     """Separate blobs using watershed. Seeds are found using the foreground pixels distance from background pixels.
     Parameters
     ----------
@@ -119,25 +117,26 @@ def seperate_blobs(x, min_dist=10, distances=[1, 1, 1]):
         binary mask of blobs
     min_dist : float
         minimum distance between seeds for watershed
+    num_peaks : int
+        maximum number of cell bodies to consider
     distances : list, ndarray
-        axis distances in order (TODO not used)
+        axis distances in order
     Returns
     -------
     label : ndarray
         labelled blob
     """
     y = x.copy()
-
     # find 1 local max per blob
     distance = nd.distance_transform_edt(y)
+    min_distance = max(1, int(round(min_dist / min(distances))))
     coords = peak_local_max(distance,
-                            min_distance=min_dist,
-                            labels=y > 0)
-    
+                            min_distance=min_distance,
+                            num_peaks=num_peaks,
+                            labels=y)
     # seperate the cells
     local_max = np.zeros(distance.shape, dtype=bool)
     local_max[tuple(coords.T)] = True
     markers = nd.label(local_max)[0]
     label = watershed(-distance, markers, mask=y)
-
     return label

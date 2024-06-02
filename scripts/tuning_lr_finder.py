@@ -10,37 +10,41 @@ import utils
 import carreno.nn.metrics as mtc
 from carreno.nn.unet import UNet, encoder_trainable
 from carreno.nn.generators import Generator
+from carreno.nn.one_cycle_callback import LRFinder, OneCycleLR
 import carreno.processing.transforms as tfs
 
 # adjustable settings
 plt.rc('font', size=18)
 config         = utils.get_config()
-out_model_name = "unet2d_base.h5"
 out_model_dir  = config['DIR']['model']
-wdb_project    = 'unet2d_base'
+out_model_name = "unet2d_lr_finder.h5"
+wdb_project    = 'unet2d_lr_finder'
 
 params = {
     'ndim'     : 2,              # 2 or 3
-    'shape'    : [1, 96, 96],    # data shape
+    'shape'    : [1, 192, 192],  # data shape
     'depth'    : 4,              # unet depth
     'nfeat'    : 64,             # nb feature for first conv layer
     'lr'       : 0.001,          # learning rate
-    'bsize'    : 32,             # batch size
-    'nepoch'   : 100,            # number of epoch
-    'scaler'   : 'norm',         # "norm" or "stand"
-    'label'    : 'hard',         # hard or soft input
-    'weight'   : True,           # use class weights for unbalanced data
-    'order'    : 'before',       # where to put batch norm
-    'ncolor'   : 1,              # color depth for input
-    'act'      : 'relu',         # activation
-    'loss'     : 'dice',         # loss function
+    'bsize'    : 16,             # batch size
+    'nepoch'   : 1,              # number of epoch
+    'scaler'   : 'stand',        # "norm" or "stand"
+    'label'    : 'soft',         # "hard" or "soft" input
+    'weight'   : [0.37,38.54,4], # use class weights for unbalanced data
+    'order'    : 'after',        # where to put batch norm
+    'ncolor'   : 3,              # color depth for input
+    'act'      : 'gelu',         # activation
+    'loss'     : 'dicecldice',   # loss function [...]
     'topact'   : 'softmax',      # top activation
     'dropout'  : 0.0,            # dropout rate
-    'backbone' : 'unet',         # "unet" or "vgg16"
-    'pretrn'   : False,          # pretrained encoder on imagenet
-    'slftrn'   : False,          # pretrained encoder on unlabeled
-    'dupe'     : 48              # nb d'usage pour un volume dans une époque
+    'backbone' : 'vgg16',        # "unet" or "vgg16"
+    'pretrn'   : True,           # pretrained encoder on imagenet
+    'dupe'     : 64              # nb of usage for a volume per epoch
 }
+
+dir_name = "testMaxLR/"
+if not os.path.exists(dir_name):
+    os.makedirs(dir_name)
 
 def main(verbose=0):
     print("###############")
@@ -58,7 +62,8 @@ def main(verbose=0):
                  backbone=None if params['backbone'] == "unet" else params['backbone'],
                  pretrained=params['pretrn'])
 
-    model.summary()
+    if True:
+        model.summary()
 
     # setup wandb
     wandb.init(project=wdb_project, config=params)
@@ -70,42 +75,24 @@ def main(verbose=0):
     trn, vld, tst = utils.split_dataset(config['VOLUME']['input'])
     fullpath = lambda dir, files : [os.path.join(dir, name) for name in files] * params['dupe']
     hard_label = params['label'] == 'hard'
-    x_train = fullpath(config['VOLUME']['input'], trn)
+    x_train = fullpath(config['VOLUME']['rl_input'], trn)
     y_train = fullpath(config['VOLUME']['target' if hard_label else 'soft_target'], trn)
-    w_train = fullpath(config['VOLUME']['weight' if hard_label else 'soft_weight'], trn) if params['weight'] else None
-    x_valid = fullpath(config['VOLUME']['input'],  vld)
+    x_valid = fullpath(config['VOLUME']['rl_input'],  vld)
     y_valid = fullpath(config['VOLUME']['target' if hard_label else 'soft_target'], vld)
-    w_valid = fullpath(config['VOLUME']['weight' if hard_label else 'soft_weight'], vld) if params['weight'] else None
-    x_test  = fullpath(config['VOLUME']['input'],  tst)
+    x_test  = fullpath(config['VOLUME']['rl_input'],  tst)
     y_test  = fullpath(config['VOLUME']['target'], tst)
 
     unlabeled_vol = list(os.listdir(config['VOLUME']['unlabeled']))
-    fullpath = lambda dir, files : [os.path.join(dir, name) for name in files] * max(1, params['dupe'] // 4)
-    x_unlabeled_train = fullpath(config['VOLUME']['unlabeled'], unlabeled_vol)
+    fullpath = lambda dir, files : [os.path.join(dir, name) for name in files] * max(1, params['dupe'])
+    x_unlabeled_train = fullpath(config['VOLUME']['rl_unlabeled'], unlabeled_vol)
     y_unlabeled_train = fullpath(config['VOLUME']['unlabeled_target' if hard_label else 'unlabeled_soft_target'], unlabeled_vol)
-    w_unlabeled_train = fullpath(config['VOLUME']['unlabeled_weight' if hard_label else 'unlabeled_soft_weight'], unlabeled_vol) if params['weight'] else None
     
     print("Training dataset")
-    if params['weight']:
-        print("-nb of instances :", len(x_train), "/", len(y_train), "/", len(w_train))
-    else:
-        print("-nb of instances :", len(x_train), "/", len(y_train))
-
+    print("-nb of instances :", len(x_train), "/", len(y_train))
     print("Validation dataset")
-    if params['weight']:
-        print("-nb of instances :", len(x_valid), "/", len(y_valid), "/", len(w_valid))
-    else:
-        print("-nb of instances :", len(x_valid), "/", len(y_valid))
-
+    print("-nb of instances :", len(x_valid), "/", len(y_valid))
     print("Testing dataset")
     print("-nb of instances :", len(x_test), "/",  len(y_test))
-
-    if params['slftrn']:
-        print("Training unlabeled dataset")
-        if params['weight']:
-            print("-nb of instances :", len(x_unlabeled_train), "/", len(y_unlabeled_train), "/", len(w_unlabeled_train))
-        else:
-            print("-nb of instances :", len(x_unlabeled_train), "/", len(y_unlabeled_train))
 
     # setup data augmentation
     train_aug, test_aug = utils.augmentations(shape=params['shape'],
@@ -114,61 +101,22 @@ def main(verbose=0):
                                               n_color_ch=params['ncolor'])
 
     # ready up the data generators
+    validation_gen = Generator(x_train + x_valid + x_test,
+                          y_train + y_valid + y_test,
+                          size=params['bsize'],
+                          augmentation=train_aug,
+                          shuffle=True)
+    # ready up the data generators
     train_gen = Generator(x_train,
                           y_train,
-                          weight=w_train if params['weight'] else None,
                           size=params['bsize'],
                           augmentation=train_aug,
                           shuffle=True)
     valid_gen = Generator(x_valid,
                           y_valid,
-                          weight=w_valid if params['weight'] else None,
                           size=params['bsize'],
                           augmentation=test_aug,
                           shuffle=False)  # make sure all patches fit in epoch
-    test_gen  = Generator(x_test,
-                          y_test,
-                          weight=None,
-                          size=params['bsize'],
-                          augmentation=test_aug,
-                          shuffle=False)
-    train_unlabeled_gen = Generator(x_unlabeled_train,
-                                    y_unlabeled_train,
-                                    weight=w_unlabeled_train if params['weight'] else None,
-                                    size=params['bsize'],
-                                    augmentation=train_aug,
-                                    shuffle=True)
-    
-    if verbose:
-        print("Generator info")
-        print("-length :", len(train_gen))
-        
-        batch0 = train_gen[0]
-        print("-batch output shape :", batch0[0].shape, "/", batch0[1].shape, end="")
-        if len(batch0) > 2:
-            print(" /", batch0[2].shape)
-        else:
-            print()
-
-        print("-batch visualization :")
-        
-        # cool visuals which are a joy to debug
-        nb_columns = len(batch0)
-        btc_size   = params['bsize']
-        nb_lines   = min(btc_size, 2)
-        for i in range(nb_lines):
-            for j, k in zip(range(1, nb_columns+1), ['x', 'y', 'w']):
-                one_input = batch0[j-1].numpy()
-                plt.subplot(nb_lines, nb_columns, i*nb_columns+j)
-                plt.title(k + " " + str(i))
-                if params['ndim'] == 2:
-                    plt.imshow(one_input[i], vmin=one_input.min(), vmax=one_input.max())
-                else:
-                    hslc = one_input[i].shape[0] // 2
-                    plt.imshow(one_input[i][hslc], vmin=one_input.min(), vmax=one_input.max())
-        
-        plt.tight_layout()
-        plt.show()
 
     print("#############")
     print("# CALLBACKS #")
@@ -193,27 +141,40 @@ def main(verbose=0):
                                                     save_weights_only=False,
                                                     verbose=1)
     
-    total_steps = len(train_gen) * params['nepoch']
-    schedule = tf.keras.optimizers.schedules.CosineDecay(params['lr'], decay_steps=total_steps)
-    optim = tf.keras.optimizers.Adam(learning_rate=schedule)
+    num_samples = len(validation_gen) * params['bsize']
+    minimum_lr = 0.00005
+    maximum_lr = 1
+    lr_callback = LRFinder(num_samples, params['bsize'],
+                       minimum_lr, maximum_lr,
+                       validation_data=validation_gen,
+                       validation_sample_rate=5,
+                       lr_scale='linear', save_dir=dir_name)
+    
+    total_steps = len(validation_gen) * params['nepoch']
+    #schedule = tf.keras.optimizers.schedules.CosineDecay(params['lr'], decay_steps=total_steps)
+    #optim = tf.keras.optimizers.Adam(learning_rate=schedule)
+    optim = tf.keras.optimizers.Adam() #tf.keras.optimizers.SGD(learning_rate=0.1, momentum=0.9, nesterov=True)
     current_epoch = 0
 
     iters = 10
     ndim  = params['ndim']
     pad   = 2
-    dice       = mtc.Dice()
-    cldice     = mtc.ClDice(    iters=iters, ndim=ndim, mode=pad)
-    dicecldice = mtc.DiceClDice(iters=iters, ndim=ndim, mode=pad)
+    dice       = mtc.Dice(class_weight=params['weight'])
+    cldice     = mtc.ClDice(    iters=iters, ndim=ndim, mode=pad, class_weight=params['weight'])
+    dicecldice = mtc.DiceClDice(iters=iters, ndim=ndim, mode=pad, class_weight=params['weight'])
     if params['loss'] == "dice":
         loss_fn = dice.loss
     elif params['loss'] == "dicecldice":
         loss_fn = dicecldice.loss
     elif params['loss'] == "cedice":
-        loss_fn = mtc.CeDice().loss
+        loss_fn = mtc.CeDice(class_weight=params['weight']).loss
     elif params['loss'] == "adawing":
-        loss_fn = mtc.AdaptiveWingLoss().loss
+        loss_fn = mtc.AdaptiveWingLoss(class_weight=params['weight']).loss
     elif params['loss'] == "cldiceadawing":
-        loss_fn = mtc.ClDiceAdaptiveWingLoss(iters=iters, ndim=ndim, mode=pad).loss
+        loss_fn = mtc.ClDiceAdaptiveWingLoss(iters=iters,
+                                             ndim=ndim,
+                                             mode=pad,
+                                             class_weight=params['weight']).loss
     else:
         raise NotImplementedError
 
@@ -223,7 +184,7 @@ def main(verbose=0):
                       metrics=[dice.coefficient, cldice.coefficient, dicecldice.coefficient],
                       sample_weight_mode="temporal", run_eagerly=True)
   
-        callbacks = [early_stop] + ([checkpoint, metrics_logger] if log else [])
+        callbacks = [checkpoint, early_stop, lr_callback] + ([metrics_logger] if log else [])
             
         hist = model.fit(train_gen,
                          validation_data=valid_gen,
@@ -244,19 +205,6 @@ def main(verbose=0):
 
     graph_path = out_model_path.rsplit(".", 1)[0]
 
-    histories = []
-
-    if params['slftrn']:
-        print("##############")
-        print("# SELF-TRAIN #")
-        print("##############")
-        
-        encoder_trainable(model, False)
-        history_dec, current_epoch = compile_n_fit(train_unlabeled_gen,
-                                                   valid_gen,
-                                                   current_epoch)
-        histories.append(history_dec)
-
     print("############")
     print("# TRAINING #")
     print("############")
@@ -265,20 +213,7 @@ def main(verbose=0):
     history, current_epoch = compile_n_fit(train_gen,
                                            valid_gen,
                                            current_epoch)
-    histories.append(history)
-
-    utils.plot_metrics(graph_path, histories, verbose)
-
-    print("############")
-    print("# EVALUATE #")
-    print("############")
-    results = model.evaluate(test_gen, return_dict=True, verbose=1)
-    wandb.log(results)
-
-    # pickle obj in case we can't load it after
-    pickle_path = out_model_path.rsplit(".", 1)[0] + ".pkl"
-    with open(pickle_path, 'wb') as f:  # open a text file
-        pickle.dump(obj=model, file=f)
+    lr_callback.plot_schedule()
 
 
 if __name__ == "__main__":
