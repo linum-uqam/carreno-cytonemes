@@ -167,28 +167,30 @@ class UNetSweeper():
         """
         self.prj_config = get_config()
         self.swp_config = config
-        ndim = 2
         self.wandb_artifact = wandb_artifact
         self.params = {
-            'ndim':     ndim,       # 2 or 3
-            'shape':    [1 if ndim == 2 else 48, 96, 96],  # data shape
-            'depth':    4,          # unet depth
-            'nfeat':    64,         # nb feature for first conv layer
-            'lr':       0.001,      # learning rate
-            'bsize':    32 if ndim == 2 else 1,  # batch size
-            'scaler':   'norm',     # normalize or standardize
-            'label':    'hard',     # hard or soft input
-            'weight':   True,       # use class weights for unbalanced data
-            'order':    'before',   # where to put batch norm
-            'ncolor':   1,          # color depth for input
-            'act':      'relu',     # activation
-            'loss':     'dice',     # loss function
-            'topact':   'softmax',  # top activation
-            'dropout':  0.0,        # dropout rate
-            'backbone': 'base',     # base or unet
-            'pretrn':   False,      # pretrained on imagenet
-            'slftrn':   False,      # self train on unlabeled data
-            'dupe':     48 if ndim == 2 else 1  # number of data duplication to fit batch size
+            'ndim':     ndim,                                  # 2 or 3
+            'shape':    [1 if ndim == 2 else 48, 96, 96],      # data shape
+            'depth':    4,                                     # unet depth
+            'nfeat':    64,                                    # nb feature for first conv layer
+            'nepoch':   self.prj_config['TRAINING']['epoch'],  # nb epoch for training
+            'lr':       [0.001, 0, 0.001],                     # learning rate [init, min, max]
+            'warmup':   0,                                     # nb epoch for lr warmup
+            'bsize':    32 if ndim == 2 else 1,                # batch size
+            'scaler':   'norm',                                # normalize or standardize
+            'label':    'hard',                                # hard or soft input
+            'weight':   False,                                 # use sample weights for unbalanced data
+            'classw':   None,                                  # use class weights for unbalanced data
+            'order':    'before',                              # where to put batch norm
+            'ncolor':   1,                                     # color depth for input
+            'act':      'relu',                                # activation
+            'loss':     'dice',                                # loss function
+            'topact':   'softmax',                             # top activation
+            'dropout':  0.0,                                   # dropout rate
+            'backbone': 'base',                                # base or unet
+            'pretrn':   False,                                 # pretrained on imagenet
+            'slftrn':   False,                                 # self train on unlabeled data
+            'dupe':     48 if ndim == 2 else 1                 # number of data duplication to fit batch size
         }
     
     def sweep(self):
@@ -230,12 +232,12 @@ class UNetSweeper():
         trn, vld, tst = split_dataset(self.prj_config['VOLUME']['input'])
         fullpath = lambda dir, files : [os.path.join(dir, name) for name in files] * self.params['dupe']
         hard_label = self.params['label'] == 'hard'
-        x_train = fullpath(self.prj_config['VOLUME']['input'],  trn)
+        x_train = fullpath(self.prj_config['VOLUME']['rl_input'],  trn)
         y_train = fullpath(self.prj_config['VOLUME']['target' if hard_label else 'soft_target'], trn)
         w_train = fullpath(self.prj_config['VOLUME']['weight' if hard_label else 'soft_weight'], trn) if self.params['weight'] else None
-        x_valid = fullpath(self.prj_config['VOLUME']['input'],  vld)
+        x_valid = fullpath(self.prj_config['VOLUME']['rl_input'],  vld)
         y_valid = fullpath(self.prj_config['VOLUME']['target'], vld)
-        x_test  = fullpath(self.prj_config['VOLUME']['input'],  tst)
+        x_test  = fullpath(self.prj_config['VOLUME']['rl_input'],  tst)
         y_test  = fullpath(self.prj_config['VOLUME']['target'], tst)
 
         print("Training dataset")
@@ -303,7 +305,7 @@ class UNetSweeper():
         # adding "{epoch:02d}-{val_dice:.2f}" to model name is recommended to make it unique
         # but it saves so many different instances of the model...
         param_str = ("-{}" * len(self.swp_config['parameters'])).format(*[getattr(wandb.config, i, None) for i in self.swp_config['parameters']])  # needlessly complicated way to include params in saved model path
-        model_name = self.swp_config['project'] + param_str + ".h5"
+        model_name = self.swp_config['project'] + param_str + ".keras"
         model_path = os.path.join(self.prj_config['DIR']['model'], model_name)
         Path(self.prj_config['DIR']['model']).mkdir(parents=True, exist_ok=True)
 
@@ -330,27 +332,32 @@ class UNetSweeper():
                                                             save_weights_only=False,
                                                             verbose=1)
 
-        total_steps = len(self.train_gen) * self.prj_config['TRAINING']['epoch']
-        schedule = tf.keras.optimizers.schedules.CosineDecay(self.params['lr'], decay_steps=total_steps)
-        optim = tf.keras.optimizers.Adam(learning_rate=schedule)
+        total_steps = len(self.train_gen) * self.params['nepoch']
+        schedule = tf.keras.optimizers.schedules.CosineDecay(
+            initial_learning_rate=self.params['lr'][0],
+            decay_steps=total_steps - self.params['warmup'],
+            alpha=self.params['lr'][1],
+            warmup_target=self.params['lr'][2],
+            warmup_steps=self.params['warmup'])
+        optim = tf.keras.optimizers.legacy.Adam(learning_rate=schedule)
 
         iters = 10
         ndim  = ndim=self.params['ndim']
         pad   = 2
         cls   = slice(1,2)  # only skeletonize cyto (tried, but gives awful result for cldice)
-        dice       = mtc.Dice()
-        cldice     = mtc.ClDice(    iters=iters, ndim=ndim, mode=pad)
-        dicecldice = mtc.DiceClDice(iters=iters, ndim=ndim, mode=pad)
+        dice       = mtc.Dice(class_weight=self.params['classw'])
+        cldice     = mtc.ClDice(    iters=iters, ndim=ndim, mode=pad, class_weight=self.params['classw'])
+        dicecldice = mtc.DiceClDice(iters=iters, ndim=ndim, mode=pad, class_weight=self.params['classw'])
         if self.params['loss'] == "dice":
             loss_fn = dice.loss
         elif self.params['loss'] == "dicecldice":
             loss_fn = dicecldice.loss
         elif self.params['loss'] == "cedice":
-            loss_fn = mtc.CeDice().loss
+            loss_fn = mtc.CeDice(class_weight=self.params['classw']).loss
         elif self.params['loss'] == "adawing":
-            loss_fn = mtc.AdaptiveWingLoss().loss
+            loss_fn = mtc.AdaptiveWingLoss(class_weight=self.params['classw']).loss
         elif self.params['loss'] == "cldiceadawing":
-            loss_fn = mtc.ClDiceAdaptiveWingLoss(iters=iters, ndim=ndim, mode=pad).loss
+            loss_fn = mtc.ClDiceAdaptiveWingLoss(iters=iters, ndim=ndim, mode=pad, class_weight=self.params['classw']).loss
         else:
             raise NotImplementedError
 
@@ -367,7 +374,7 @@ class UNetSweeper():
                                   steps_per_epoch=len(train_gen),
                                   validation_steps=len(valid_gen),
                                   batch_size=self.params['bsize'],
-                                  epochs=self.prj_config['TRAINING']['epoch'],
+                                  epochs=self.params['nepoch'],
                                   initial_epoch=initial_epoch,
                                   callbacks=callbacks,
                                   verbose=1)
@@ -376,7 +383,7 @@ class UNetSweeper():
             print("##############")
             print("# SELF-TRAIN #")
             print("##############")
-            other_optim = tf.keras.optimizers.Adam(learning_rate=schedule)
+            other_optim = tf.keras.optimizers.legacy.Adam(learning_rate=schedule)
             compile_n_fit(self.unlabel_gen,
                           self.valid_gen,
                           optimizer=other_optim,

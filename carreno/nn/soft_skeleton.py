@@ -47,7 +47,7 @@ def soft_dilate(ndim, img, mode=def_mode):
     else:
         raise NotImplementedError
     
-    return img
+    return tf.cast(img, dtype=tf.float32)
 
 
 def soft_dilate2D(*args, **kwargs):
@@ -133,7 +133,7 @@ def soft_skel(erode_fn, open_fn, img, iters=10, mode=def_mode):
     assert iters >= 0, "Nb of iterations must be higher than 0."
     
     img1 = open_fn(img, mode=mode)
-    skel = tf.nn.relu(img - img1)
+    skel = tf.nn.relu(tf.subtract(tf.cast(img, dtype=tf.float32), img1))
     
     # Tried and failed to add a check for if there was anything left
     # to erode before looping again, but keras requires specific loop

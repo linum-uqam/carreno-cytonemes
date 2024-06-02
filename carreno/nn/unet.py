@@ -4,6 +4,44 @@ import numpy as np
 import carreno.nn.layers
 
 
+class UNetClassWeight(tf.keras.Model):
+    def __init__(self, class_weight=None, *args, **kwargs):
+        super.__init__(*args, **kwargs)
+        self.class_weight = class_weight
+
+    def train_step(self, data):
+        # Unpack the data. Its structure depends on your model and
+        # on what you pass to `fit()`.
+        x, y = data
+
+        with tf.GradientTape() as tape:
+            y_pred = self(x, training=True)  # Forward pass
+            # Compute the loss value
+            # (the loss function is configured in `compile()`)
+
+            if self.class_weight is None:
+                loss = self.compute_loss(y=y, y_pred=y_pred)
+            else:
+                # Apply class weight on linear activation
+                ...
+
+                # Apply actual activation on weighted prediction
+
+        # Compute gradients
+        trainable_vars = self.trainable_variables
+        gradients = tape.gradient(loss, trainable_vars)
+        # Update weights
+        self.optimizer.apply_gradients(zip(gradients, trainable_vars))
+        # Update metrics (includes the metric that tracks the loss)
+        for metric in self.metrics:
+            if metric.name == "loss":
+                metric.update_state(loss)
+            else:
+                metric.update_state(y, y_pred)
+        # Return a dict mapping metric names to current value
+        return {m.name: m.result() for m in self.metrics}
+
+
 def encoder_trainable(model, trainable=True):
     """
     Set UNet encoder layers as trainable or not.

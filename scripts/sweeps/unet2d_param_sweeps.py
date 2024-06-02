@@ -26,7 +26,11 @@ sweep_configs = {
             'name': 'val_dicecldice'
         },
         'parameters': {
-            'lr':    {'values': [0.01, 0.001, 0.0001]},
+            'lr':    {'values': [
+                        [0.01, 0, 0.01],
+                        [0.001, 0, 0.001],
+                        [0.0001, 0, 0.0001]
+                     ]},
             'bsize': {'values': [16, 32, 48]}
         }
     },
@@ -39,7 +43,7 @@ sweep_configs = {
             'name': 'val_dicecldice'
         },
         'parameters': {
-            'lr':     {'value': 0.001},
+            'lr':     {'value': [0.001, 0, 0.001]},
             'bsize':  {'value': 32},
             'scaler': {'values': ['norm', 'std']},
             'label':  {'values': ['soft', 'hard']}
@@ -54,7 +58,7 @@ sweep_configs = {
             'name': 'val_dicecldice'
         },
         'parameters': {
-            'lr':     {'value': 0.001},
+            'lr':     {'value': [0.001, 0, 0.001]},
             'bsize':  {'value': 32},
             'scaler': {'value': 'std'},
             'label':  {'value': 'soft'},
@@ -70,7 +74,7 @@ sweep_configs = {
             'name': 'val_dicecldice'
         },
         'parameters': {
-            'lr':     {'value': 0.001},
+            'lr':     {'value': [0.001, 0, 0.001]},
             'bsize':  {'value': 32},
             'scaler': {'value': 'std'},
             'label':  {'value': 'soft'},
@@ -89,7 +93,7 @@ sweep_configs = {
             'name': 'val_dicecldice'
         },
         'parameters': {
-            'lr':      {'value': 0.001},
+            'lr':      {'value': [0.001, 0, 0.001]},
             'bsize':   {'value': 32},
             'scaler':  {'value': 'std'},
             'label':   {'value': 'soft'},
@@ -109,7 +113,7 @@ sweep_configs = {
             'name': 'val_dicecldice'
         },
         'parameters': {
-            'lr':     {'value': 0.001},
+            'lr':     {'value': [0.001, 0, 0.001]},
             'bsize':  {'value': 32},
             'scaler': {'value': 'std'},
             'label':  {'value': 'soft'},
@@ -131,7 +135,7 @@ sweep_configs = {
             'name': 'val_dicecldice'
         },
         'parameters': {
-            'lr':     {'value': 0.001},
+            'lr':     {'value': [0.001, 0, 0.001]},
             'bsize':  {'values': [8, 32]},
             'shape':  {'values': [(1, 96, 96), (1, 192, 192)]},
             'scaler': {'value': 'std'},
@@ -154,7 +158,7 @@ sweep_configs = {
             'name': 'val_dicecldice'
         },
         'parameters': {
-            'lr':     {'value': 0.001},
+            'lr':     {'value': [0.001, 0, 0.001]},
             'bsize':  {'value': 8},
             'shape':  {'value': (1, 192, 192)},
             'scaler': {'value': 'std'},
@@ -166,14 +170,44 @@ sweep_configs = {
             'backbone': {'value': 'vgg16'},
             'pretrn': {'value': True},
             'ncolor': {'value': 3},
-            'slftrn': {'values': [False, True]}
+        }
+    },
+    9 : {
+        'method': 'grid',
+        'name':   'sweep',
+        'project': 'unet2d_cosine_scheduler',
+        'metric': {
+            'goal': 'minimize',
+            'name': 'val_loss'
+        },
+        'parameters': {
+            'bsize':  {'value': 8},
+            'shape':  {'value': (1, 192, 192)},
+            'scaler': {'value': 'std'},
+            'label':  {'value': 'soft'},
+            'order':  {'value': 'after'},
+            'act':    {'value': 'relu'},
+            'topact': {'value': 'relu'},
+            'loss':   {'value': 'cldiceadawing'},
+            'backbone': {'value': 'vgg16'},
+            'pretrn': {'value': True},
+            'ncolor': {'value': 3},
+            'classw': {'value': [0.37,38.54,4]},
+            'lr':     {'values': [
+                        [1e-4, 1e-5, 0.1],
+                        [1e-4, 5e-4, 0.1],
+                        [1e-4, 1e-5, 0.05],
+                        [1e-4, 5e-4, 0.05]
+                      ]},
+            'warmup': {'values': [10, 15, 20]},
+            'nepoch': {'values': [30, 40, 50]}
         }
     }
 }
 
 
 def main():
-    current_test = 5
+    current_test = 9
     sweep_config = sweep_configs[current_test]
     sweep_id = wandb.sweep(sweep_config)
     sweeper = utils.UNetSweeper(sweep_config,wandb_artifact=False)

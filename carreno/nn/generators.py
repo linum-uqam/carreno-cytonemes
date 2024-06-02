@@ -32,8 +32,7 @@ class Generator(tf.keras.utils.Sequence):
         self.shuffle = shuffle
     
     def __len__(self):
-        # number of batch (some img might not be included in the epoch)
-        # if batch size is bigger than data, we fill batch with duplicates
+        # number of batch (aka steps) to go through all entries
         return len(self.y) // self.size
         
     def __getitem__(self, idx):

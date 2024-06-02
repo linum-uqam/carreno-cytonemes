@@ -1,5 +1,5 @@
 Cython
-numpy
+numpy>=1.22
 scipy
 scikit-image
 tifffile
@@ -11,10 +11,11 @@ scikit-image
 scikit-learn
 bm3d
 matplotlib
-tensorflow==2.9.0
+tensorflow==2.13.0
 cuda-python
 patchify
 pyyaml
 plantuml
-wandb
+wandb>=0.15.10
 streamlit
+h5py

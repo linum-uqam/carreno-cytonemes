@@ -168,6 +168,65 @@ def augmentations(shape, norm_or_std, is_2D, n_color_ch):
     return train_aug, test_aug
 
 
+def plot_metrics(path, histories, verbose=0):
+    # metrics display (acc, loss, etc.)
+    graph_path = path
+
+    def get_color():
+        while 1:
+            for j in ['b', 'y', 'r', 'g']:
+                yield j
+    color = get_color()
+
+    for i in range(len(histories)):
+        history = histories[i]
+        epochs = np.array(history.history['epoch']) + 1
+        loss_hist = history.history['loss']
+        val_loss_hist = history.history['val_loss']
+        plt.plot(epochs, loss_hist, next(color), label='trn {}'.format(i))
+        plt.plot(epochs, val_loss_hist, next(color), label='val {}'.format(i))
+    plt.title('Training and validation loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(graph_path + "_loss.svg", format="svg")
+    plt.savefig(graph_path + "_loss.png")
+    plt.show() if verbose else plt.clf()
+    
+    for i in range(len(histories)):
+        history = histories[i]
+        epochs = np.array(history.history['epoch']) + 1
+        dice_hist = history.history['dice']
+        val_dice_hist = history.history['val_dice']
+        plt.plot(epochs, dice_hist, next(color), label='trn {}'.format(i))
+        plt.plot(epochs, val_dice_hist, next(color), label='val {}'.format(i))
+    plt.title('Training and validation F1')
+    plt.xlabel('Epochs')
+    plt.ylabel('F1 Score')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(graph_path + "_dice.svg", format="svg")
+    plt.savefig(graph_path + "_dice.png")
+    plt.show() if verbose else plt.clf()
+
+    for i in range(len(histories)):
+        history = histories[i]
+        epochs = np.array(history.history['epoch']) + 1
+        dice_hist = history.history['dicecldice']
+        val_dice_hist = history.history['val_dicecldice']
+        plt.plot(epochs, dice_hist, next(color), label='trn {}'.format(i))
+        plt.plot(epochs, val_dice_hist, next(color), label='val {}'.format(i))
+    plt.title('Training and validation DiceClDice')
+    plt.xlabel('Epochs')
+    plt.ylabel('DiceClDice Score')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(graph_path + "_dicecldice.svg", format="svg")
+    plt.savefig(graph_path + "_dicecldice.png")
+    plt.show() if verbose else plt.clf()
+
+
 def main():
     cf = get_config()
     

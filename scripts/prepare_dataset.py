@@ -8,6 +8,7 @@ from pyunpack import Archive
 import scipy.special
 import scipy.ndimage
 import unittest
+import skimage.restoration
 
 # local imports
 import utils
@@ -15,25 +16,29 @@ from carreno.io.fetcher import fetch_folder, folders_id
 from carreno.utils.array import normalize
 from carreno.processing.weights import balanced_class_weights
 
-download                 = 1  # False if the folders are already downloaded
-uncompress_raw           = 1  # uncompress archives in raw data, error if uncompressed files are missing with options uncompress_raw and hand_drawn_cyto
-create_labeled_dataset   = 1  # organise uncompressed labeled data
-create_sample_weights    = 1  # make weight distributions for labeled data patches (during `create_labeled_dataset`)
-create_unlabeled_dataset = 1  # organise uncompressed unlabeled data
-hand_drawn_cyto_dataset  = 1  # save hand drawn cytonemes (2D) in data
-cleanup_uncompressed     = 1  # cleanup extracted files in raw folder
+download                 = 0  # False if the folders are already downloaded
+uncompress_raw           = 0  # uncompress archives in raw data, error if uncompressed files are missing with options uncompress_raw and hand_drawn_cyto
+create_labeled_dataset   = 0  # organise uncompressed labeled data
+create_denoised_inputs   = 1  # richadson-lucy data
+create_sample_weights    = 0  # make weight distributions for labeled data patches (during `create_labeled_dataset`)
+create_unlabeled_dataset = 0  # organise uncompressed unlabeled data
+hand_drawn_cyto_dataset  = 0  # save hand drawn cytonemes (2D) in data
+cleanup_uncompressed     = 0  # cleanup extracted files in raw folder
 
-config        = utils.get_config()
-raw_dir       = config['DIR']['raw']
-drawing_dir   = config['DIR']['drawing']
-download_dir  = config['DIR']['raw'].rsplit("/", 1)[0]  # folder where downloads and dataset will be put, must not exist for download
-input_dir     = config['VOLUME']['input']
-target_dir    = config['VOLUME']['target']
-weight_dir    = config['VOLUME']['weight']
-starget_dir   = config['VOLUME']['soft_target']
-sweight_dir   = config['VOLUME']['soft_weight']
-unlabeled_dir = config['VOLUME']['unlabeled']
-blur          = config['PREPROCESS']['blur']
+config           = utils.get_config()
+raw_dir          = config['DIR']['raw']
+drawing_dir      = config['DIR']['drawing']
+download_dir     = config['DIR']['raw'].rsplit("/", 1)[0]  # folder where downloads and dataset will be put, must not exist for download
+psf_dir          = config['DIR']['psf']
+input_dir        = config['VOLUME']['input']
+rl_input_dir     = config['VOLUME']['rl_input']
+target_dir       = config['VOLUME']['target']
+weight_dir       = config['VOLUME']['weight']
+starget_dir      = config['VOLUME']['soft_target']
+sweight_dir      = config['VOLUME']['soft_weight']
+unlabeled_dir    = config['VOLUME']['unlabeled']
+rl_unlabeled_dir = config['VOLUME']['rl_unlabeled']
+blur             = config['PREPROCESS']['blur']
 
 # list of labeled volumes
 # volumes = [[path_to_volume, volume_name]]
@@ -229,6 +234,43 @@ def create_dataset_target_folder(folder, volumes, cytonemes, bodies, blur=None):
         tif.imwrite(folder + '/' + volumes[i][1] + '.tif', y, photometric='rgb')
 
 
+def create_denoised_folder(folder, input_folder):
+    """
+    Create W folder using Y folder
+    Parameters
+    ----------
+    folder : str, Path
+        Path where to create/override the richardson-lucy denoised volumes folder
+    input_folder : str, Path
+        Path where volumes are
+    Returns
+    -------
+    None
+    """
+    # remove patches folders if they already exist
+    if os.path.isdir(folder):
+        rmtree(folder)
+
+    # create folder
+    pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
+    
+    psf = tif.imread(os.path.join(psf_dir, "Averaged PSF.tif"))
+
+    # create folder
+    pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
+
+    filenames = []
+    for f in os.listdir(input_folder):
+        filenames.append(f)
+        
+    for f in filenames:
+        # save weighted volume
+        x = tif.imread(os.path.join(input_folder, f))
+        y = skimage.restoration.richardson_lucy(x, psf, 25)
+        
+        tif.imwrite(os.path.join(folder, f), y, photometric="minisblack")
+
+
 def create_sample_weight_folder(folder, target_folder):
     """
     Create W folder using Y folder
@@ -346,6 +388,12 @@ def main():
         if blur:
             create_dataset_target_folder(starget_dir, volumes, cytonemes, bodies, blur=blur)
         print("done")
+    
+    if create_denoised_inputs:
+        # this will override rl_input folder so be careful
+        print("Creating labeled dataset from raw data ...", end=" ")
+        create_denoised_folder(rl_input_dir, input_dir)
+        create_denoised_folder(rl_unlabeled_dir, unlabeled_dir)
     
     if create_sample_weights:
         print("Creating weights from labeled dataset ...", end=" ")
